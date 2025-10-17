@@ -1,0 +1,22 @@
+{
+  "data_path_xyz":   "../run_data/6Na2WO4-2WO3.xyz",
+  "aimd_pos_file":   "../run_data/Na2WO4-WO3aimd_data/32-pos-1.xyz",
+  "aimd_force_file": "../run_data/Na2WO4-WO3aimd_data/32-frc-1.xyz",
+  "box_length": 11,
+  "cut_off": 3,
+  "mlps_finetune_params": {
+    "targets": "ef",
+    "optimizer": "Adam",
+    "scheduler": "CosLR",
+    "criterion": "MSE",
+    "epochs": 1,
+    "learning_rate": 0.001,
+    "print_freq": 1
+  },
+  "dt": 10,
+  "temperature": [273,1173],
+  "gamma": 100,
+  "num_steps": 1000,
+  "print_interval": 1,
+  "output_save_path": "../run_data/output"
+}
