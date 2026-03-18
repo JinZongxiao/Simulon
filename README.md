@@ -39,6 +39,20 @@ Quick install
   - Windows users: make sure MSVC Build Tools and CUDA are on PATH.
   - Note: a prebuilt `simulon_cuda.cp311-win_amd64.pyd` is included for Python 3.11 on Windows; it may work if your environment matches. Otherwise, build from source.
 
+Desktop app (Windows/macOS)
+- A cross-platform Tk desktop GUI is available at `simulon_desktop.py`. It lets you load/edit the bundled JSON templates, choose an output folder, and run Lennard-Jones or user-defined pair-potential simulations without using the command line.
+- Start from source:
+  - `python simulon_desktop.py`
+- Build a distributable desktop application with PyInstaller on the target OS:
+  - `pip install pyinstaller`
+  - `python packaging/build_desktop.py`
+- Output artifacts:
+  - Windows: `dist/SimulonDesktop/SimulonDesktop.exe` (or equivalent PyInstaller output)
+  - macOS: `dist/SimulonDesktop.app`
+- Packaging notes:
+  - The build bundles `run_scripts/` JSON templates and `run_data/` sample systems so the app can be opened and used directly after packaging.
+  - Build on Windows for Windows binaries, and on macOS for macOS app bundles.
+
 Quick start
 1) Lennard-Jones MD
 - Edit `run_scripts/lj_run.json` if needed (structure, box length, LJ parameters, cutoff, temperature, steps, output directory).

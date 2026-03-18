@@ -39,6 +39,20 @@
   - Windows 用户：确保已安装 MSVC Build Tools，且 CUDA 在 PATH 中。
   - 说明：仓库已包含适用于 Python 3.11/Windows 的预编译文件 `simulon_cuda.cp311-win_amd64.pyd`，若环境匹配可直接使用，否则建议从源码编译。
 
+桌面应用（Windows/macOS）
+- 仓库新增了基于 Tk 的跨平台桌面 GUI，入口为 `simulon_desktop.py`。它可以直接加载/编辑内置 JSON 模板、选择输出目录，并在不使用命令行的情况下运行 Lennard-Jones 与用户自定义对势模拟。
+- 源码方式启动：
+  - `python simulon_desktop.py`
+- 在目标系统上使用 PyInstaller 构建可分发桌面应用：
+  - `pip install pyinstaller`
+  - `python packaging/build_desktop.py`
+- 产物位置：
+  - Windows：`dist/SimulonDesktop/SimulonDesktop.exe`（或等效 PyInstaller 输出）
+  - macOS：`dist/SimulonDesktop.app`
+- 打包说明：
+  - 构建时会把 `run_scripts/` 的 JSON 模板和 `run_data/` 示例体系一起打包，生成后的应用可以直接打开并使用。
+  - 需要在哪个平台分发，就在哪个平台执行构建：Windows 生成 Windows 可执行文件，macOS 生成 macOS `.app`。
+
 快速开始
 1）Lennard-Jones MD
 - 如需修改输入，在 `run_scripts/lj_run.json` 中调整（结构路径、盒长、LJ 参数、截断、温度、步数、输出目录等）。

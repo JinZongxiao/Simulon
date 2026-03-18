@@ -1,5 +1,5 @@
 {
-  "data_path_xyz": "../run_data/Ar.xyz",
+  "data_path_xyz": "../run_data/Ar/Ar.xyz",
   "box_length": 80,
   "pair_parameter": {
     "[0 0]": {
