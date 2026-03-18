@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simulon-desktop"
+version = "0.1.0"
+description = "Installable desktop application packaging for the Simulon molecular dynamics toolkit."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "LicenseRef-UnknownLicense" }
+authors = [
+  { name = "Simulon contributors" }
+]
+dependencies = []
+
+[tool.briefcase]
+project_name = "Simulon"
+bundle = "com.simulon"
+version = "0.1.0"
+license = "LicenseRef-UnknownLicense"
+author = "Simulon contributors"
+
+[tool.briefcase.app.desktop_app]
+formal_name = "Simulon Desktop"
+description = "A native-installable desktop shell for running Simulon MD examples."
+long_description = "A native-installable Windows/macOS desktop application for editing bundled Simulon example configs and launching molecular dynamics jobs without opening a terminal."
+sources = [
+  "desktop_app",
+  "core",
+  "graph_diffusion",
+  "io_utils",
+  "machine_learning_potentials",
+  "run_data",
+  "run_scripts",
+  "simulation_agent",
+]
+requires = [
+  "torch",
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "ase",
+  "pymatgen",
+  "tqdm",
+  "torch-geometric",
+]
+test_sources = []
+
+[tool.briefcase.app.desktop_app.macOS]
+requires = []
+requirement_installer_args = [
+  "--find-links",
+  "packaging/wheelhouse/macOS-cp310",
+  "--find-links",
+  "packaging/wheelhouse/macOS-cp311",
+  "--extra-index-url",
+  "https://download.pytorch.org/whl/cpu",
+  "--only-binary",
+  ":all:",
+]
+
+[tool.briefcase.app.desktop_app.windows]
+requires = []
+requirement_installer_args = [
+  "--find-links",
+  "packaging/wheelhouse/windows-cp310",
+  "--find-links",
+  "packaging/wheelhouse/windows-cp311",
+  "--extra-index-url",
+  "https://download.pytorch.org/whl/cpu",
+  "--only-binary",
+  ":all:",
+]

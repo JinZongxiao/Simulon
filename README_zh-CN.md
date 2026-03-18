@@ -39,6 +39,29 @@
   - Windows 用户：确保已安装 MSVC Build Tools，且 CUDA 在 PATH 中。
   - 说明：仓库已包含适用于 Python 3.11/Windows 的预编译文件 `simulon_cuda.cp311-win_amd64.pyd`，若环境匹配可直接使用，否则建议从源码编译。
 
+桌面应用（Windows/macOS）
+- 仓库新增了基于 Tk 的跨平台桌面 GUI，入口为 `simulon_desktop.py`。它可以直接加载/编辑内置 JSON 模板、选择输出目录，并在不使用命令行的情况下运行 Lennard-Jones 与用户自定义对势模拟。
+- 源码方式启动：
+  - `python simulon_desktop.py`
+- 在目标系统上使用 Briefcase 构建“可安装”的原生桌面应用：
+  - `pip install -r packaging/requirements-desktop.txt`
+  - 先预下载安装器最容易卡住的重依赖二进制 wheel：
+    - `python packaging/prepare_wheelhouse.py --target windows`
+    - `python packaging/prepare_wheelhouse.py --target macOS`
+    - 如需 PyG 原生算子 wheel：`python packaging/prepare_wheelhouse.py --target windows --with-pyg-ops --torch-version 2.6.0`
+  - Windows 安装包：`python packaging/build_installers.py --target windows --format msi`
+  - macOS 安装包：`python packaging/build_installers.py --target macOS --format dmg`
+  - 如需 macOS `.pkg`：`python packaging/build_installers.py --target macOS --format pkg`
+- 产物位置：
+  - Windows：可安装的 `.msi`
+  - macOS：可安装的 `.dmg` 或 `.pkg`
+- 打包说明：
+  - Briefcase 的原生应用配置写在 `pyproject.toml` 中，因此这里生成的是“可安装”的桌面应用，而不是便携式可执行文件打包。
+  - Briefcase 现在会优先从 `packaging/wheelhouse/<target>-cpXY/` 里找 `torch` 和 `torch_geometric` 的 wheel，找不到时再回退到官方 PyTorch CPU wheel 索引，这样安装器构建时的重依赖解析会稳定很多。
+  - 按照 PyG 官方安装文档，`torch_geometric` 基础包本身不强制依赖那些额外的编译扩展；如果你确实需要这些加速算子，可以用 `--with-pyg-ops` 额外预下载进 wheelhouse。
+  - 构建时会把 `run_scripts/` 的 JSON 模板和 `run_data/` 示例体系一起打包，安装后的应用可直接打开并使用。
+  - 需要在哪个平台分发，就在哪个平台执行构建：Windows 生成 Windows 安装包，macOS 生成 macOS 安装包。
+
 快速开始
 1）Lennard-Jones MD
 - 如需修改输入，在 `run_scripts/lj_run.json` 中调整（结构路径、盒长、LJ 参数、截断、温度、步数、输出目录等）。
@@ -86,4 +109,3 @@
 
 贡献
 - 欢迎提交 Issue/PR。反馈问题时请尽量提供最小可复现示例或小型输入结构。
-

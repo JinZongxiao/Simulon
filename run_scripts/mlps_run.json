@@ -1,7 +1,7 @@
 {
-  "data_path_xyz":   "../run_data/6Na2WO4-2WO3.xyz",
-  "aimd_pos_file":   "../run_data/Na2WO4-WO3aimd_data/32-pos-1.xyz",
-  "aimd_force_file": "../run_data/Na2WO4-WO3aimd_data/32-frc-1.xyz",
+  "data_path_xyz":   "../run_data/Na2WO$-WO3/6Na2WO4-2WO3.xyz",
+  "aimd_pos_file":   "../run_data/Na2WO4-WO3 aimd_data/32-pos-1.xyz",
+  "aimd_force_file": "../run_data/Na2WO4-WO3 aimd_data/32-frc-1.xyz",
   "box_length": 11,
   "cut_off": 3,
   "mlps_finetune_params": {
