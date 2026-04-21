@@ -23,18 +23,24 @@ class SumBackboneInterface(nn.Module):
         self.molecular = molecular
         self.device = self.molecular.device
         self.atom_num = self.molecular.atom_count
+        # 预分配累加缓冲区，避免每步 forward 内分配新张量
+        # _buf_forces: [N,3] float32；_buf_energy/_buf_virial: 0-dim scalar
+        self._buf_forces = torch.zeros(self.atom_num, 3, device=self.device)
+        self._buf_energy = torch.tensor(0.0, device=self.device)
+        self._buf_virial = torch.tensor(0.0, device=self.device)
 
     def forward(self):
-        total_forces = torch.zeros(self.atom_num, 3, device=self.device)
-        total_energy = torch.tensor(0.0, device=self.device)
-        total_virial = torch.tensor(0.0, device=self.device)
+        # zero_ 原地清零，复用已分配内存（避免每步 torch.zeros(N,3) 分配）
+        self._buf_forces.zero_()
+        self._buf_energy.zero_()
+        self._buf_virial.zero_()
         for backbone in self.backbones:
             output = backbone()
-            total_forces.add_(output['forces'])
-            total_energy.add_(output['energy'])
+            self._buf_forces.add_(output['forces'])
+            self._buf_energy.add_(output['energy'])
             if 'virial' in output:
-                total_virial.add_(output['virial'])
-        return {'forces': total_forces, 'energy': total_energy, 'virial': total_virial}
+                self._buf_virial.add_(output['virial'])
+        return {'forces': self._buf_forces, 'energy': self._buf_energy, 'virial': self._buf_virial}
 
 
 class BaseModel(nn.Module):

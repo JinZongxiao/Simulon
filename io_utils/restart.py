@@ -115,9 +115,13 @@ def load_checkpoint(model, path: str | Path) -> int:
         mol._box_length = ckpt['box_length']   # 向后兼容标量存储
 
     # ── 邻居列表：强制重建 ──────────────────────────────────────────────────
-    # 设置 last_positions 为全零，使位移判断 > skin/2 必然成立
+    # 将 last_positions 置 None，而非 zeros。
+    # 原因：update_coordinates 在 last_positions is not None 时会做位移检查，
+    # 若检查结果 <= skin/2（例如所有原子恰好都在坐标轴原点附近）则会把
+    # needs_update 覆盖写回 False，导致邻居表跳过重建，产生错误的 edge_index。
+    # 置为 None 走 else 分支，needs_update = True 无条件触发，完全安全。
     if hasattr(mol, 'last_positions'):
-        mol.last_positions = torch.zeros_like(mol.coordinates)
+        mol.last_positions = None  # → update_coordinates else-branch → needs_update=True 无条件
 
     # ── 积分器内部状态 ───────────────────────────────────────────────────────
     integrator = model.Integrator
