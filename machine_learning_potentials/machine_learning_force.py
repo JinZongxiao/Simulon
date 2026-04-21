@@ -90,17 +90,18 @@ class MachineLearningForce(BackboneInterface, nn.Module):
                 'virial': torch.tensor(0.0, device=self.device)}
 
     def _forward_chgnet(self):
-        from chgnet.model import CHGNet
-
         coords_np = self.molecular.coordinates.detach().cpu().numpy()  # [N,3]
 
-        # ── 惰性图重建 ──────────────────────────────────────────────────────
+        # ── 拓扑惰性重建（位移 > rebuild_tol 才跑 graph_converter） ──────
         if self._needs_rebuild(coords_np):
-            self._rebuild_graph(coords_np)
+            self._rebuild_graph(coords_np)   # 更新拓扑 + 坐标
+        else:
+            # 每步都必须更新坐标（CHGNet 对 atom_frac_coord 求 autograd 得力）
+            self._update_frac_coords(coords_np)
 
         # ── 直接调用模型（跳过 predict_structure 的 graph 重建） ──────────
-        # task='efs': energy + forces + stress
-        with torch.no_grad():
+        # CHGNet 通过 autograd 计算力（F = -dE/dx），必须保留梯度追踪
+        with torch.enable_grad():
             result = self.model([self._chgnet_graph], task='efs')
 
         # energy: eV/atom → eV 总能
@@ -109,16 +110,24 @@ class MachineLearningForce(BackboneInterface, nn.Module):
         total_energy = torch.tensor(e_per_atom * N, dtype=torch.float32,
                                     device=self.device)
 
-        # forces: numpy [N,3] → GPU tensor
-        forces_np = result['f'][0]                        # [N,3] numpy
-        forces = torch.from_numpy(np.asarray(forces_np, dtype=np.float32)).to(self.device)
+        # forces: CHGNet 在 CUDA 下返回 Tensor，CPU 下返回 numpy，统一处理
+        forces_raw = result['f'][0]
+        if isinstance(forces_raw, torch.Tensor):
+            forces = forces_raw.detach().to(self.device).float()
+        else:
+            forces = torch.from_numpy(
+                np.asarray(forces_raw, dtype=np.float32)
+            ).to(self.device)
 
         # stress → virial（用于 NPT）
         # CHGNet 应力单位：GPa，形状 [3,3] 或 [6]
         # virial = -stress * V，维里标量 = trace(virial)/3
         virial = torch.tensor(0.0, device=self.device)
         if 's' in result and result['s'][0] is not None:
-            stress_gpa = np.asarray(result['s'][0], dtype=np.float32)  # GPa
+            s_raw = result['s'][0]
+            stress_gpa = s_raw.detach().cpu().numpy().astype(np.float32) \
+                         if isinstance(s_raw, torch.Tensor) \
+                         else np.asarray(s_raw, dtype=np.float32)
             if stress_gpa.ndim == 1 and len(stress_gpa) == 6:
                 # Voigt: [s11,s22,s33,s23,s13,s12] → trace = s11+s22+s33
                 trace = float(stress_gpa[0] + stress_gpa[1] + stress_gpa[2])
@@ -159,9 +168,40 @@ class MachineLearningForce(BackboneInterface, nn.Module):
             coords_np,
             coords_are_cartesian=True,
         )
-        self._chgnet_graph  = self._graph_converter(structure, graph_id='md_step')
+        # .to() 返回新对象，必须重新赋值
+        self._chgnet_graph  = self._graph_converter(
+            structure, graph_id='md_step'
+        ).to(self.device)
         self._ref_coords_np = coords_np.copy()
         self._graph_builds += 1
+
+    def _update_frac_coords(self, coords_np: np.ndarray):
+        """
+        仅替换 atom_frac_coord，复用缓存的图拓扑（bond/angle connectivity）。
+        比完整重建快 10-30×（省去 CrystalGraphConverter 的键角搜索）。
+        """
+        from chgnet.graph.crystalgraph import CrystalGraph
+        # 笛卡尔坐标 → 分数坐标
+        H    = self._lattice.matrix                        # [3,3] numpy
+        H_inv = np.linalg.inv(H)
+        frac = torch.tensor(
+            coords_np @ H_inv.T, dtype=torch.float32, device=self.device
+        )
+        g = self._chgnet_graph
+        # 创建新 CrystalGraph：复用所有拓扑张量，只换 atom_frac_coord
+        self._chgnet_graph = CrystalGraph(
+            atomic_number      = g.atomic_number,
+            atom_frac_coord    = frac,
+            atom_graph         = g.atom_graph,
+            atom_graph_cutoff  = g.atom_graph_cutoff,
+            neighbor_image     = g.neighbor_image,
+            directed2undirected= g.directed2undirected,
+            undirected2directed= g.undirected2directed,
+            bond_graph         = g.bond_graph,
+            bond_graph_cutoff  = g.bond_graph_cutoff,
+            lattice            = g.lattice,
+            graph_id           = g.graph_id,
+        )
 
     def _build_lattice(self) -> Lattice:
         if hasattr(self.molecular, 'box') and self.molecular.box.is_orthogonal:
