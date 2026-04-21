@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd.bak
+*.egg-info/
+dist/
+.eggs/
+
+# Build artifacts (compiled CUDA extension and intermediate objects)
+build/
+*.obj
+*.exp
+*.lib
+*.ilk
+*.pdb
+
+# Precompiled extension – keep the .pyd but ignore backup
+simulon_cuda.cp311-win_amd64.pyd.bak
+
+# Runtime outputs
+run_output/
+*.png
+*.log
+
+# IDE / tools
+.idea/
+.vscode/
+.claude/
+
+# Temp / test helpers
+_check_imports.py
+_smoke_test.py

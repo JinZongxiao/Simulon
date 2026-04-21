@@ -11,6 +11,7 @@ from torch_geometric.data import Data
 
 from scipy.spatial import cKDTree
 from core.neighbor_search.gpu_kdtree import find_neighbors_gpu_pbc
+from core.box import Box
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -28,14 +29,24 @@ class AtomFileReader:
                  is_mlp = False,
                  is_fs = False,
                  is_switch = False,
-                 switch_ratio: float = 0.9
+                 switch_ratio: float = 0.9,
+                 box_vectors = None,         # [3,3] 三斜格矢（可选），覆盖 box_length
                  ):
         # normalize device
         if isinstance(device, str):
             device = torch.device(device)
         self.device = device
+
+        # ── Box 对象（正交或三斜） ──────────────────────────────────────────
+        if box_vectors is not None:
+            self.box = Box(box_vectors, device=device)
+        else:
+            self.box = Box(box_length, device=device)
+
+        # 兼容旧代码的 box_length 属性（正交盒子）
         self.box_length_cpu = box_length
-        self.box_length = torch.tensor(box_length,device=self.device)
+        self.box_length = self.box.diag[0] if self.box.is_orthogonal \
+                          else torch.tensor(box_length, device=device, dtype=torch.float64)
         self.cutoff = torch.tensor(cutoff,device=self.device)
         self.parameter = parameter
         self.is_mlp = is_mlp
@@ -124,13 +135,12 @@ class AtomFileReader:
 
     def update_coordinates(self, coordinates):
         if self.last_positions is not None:
-            displacement = coordinates - self.last_positions
-            displacement -= torch.round(displacement / self.box_length) * self.box_length
+            displacement = self.box.minimum_image(coordinates - self.last_positions)
             max_displacement = torch.max(torch.norm(displacement, dim=1))
 
             if max_displacement > self.skin_thickness / 2:
                 self.needs_update = True
-                self.last_positions = coordinates.clone()
+                self.last_positions = coordinates.detach().clone()
             else:
                 self.needs_update = False
         else:
@@ -141,14 +151,14 @@ class AtomFileReader:
         self.graph_data.pos = coordinates
 
         if self.needs_update:
-            self.update_neighbor_list()  
+            self.update_neighbor_list()
             if not self.is_mlp and not self.is_fs:
                 self.pair_params = self.initial_parameters()
         else:
             self.graph_data.edge_attr = self.calculate_edge_attr(
                 coordinates,
                 self.graph_data.edge_index,
-                self.box_length
+                self.box,
             )
 
     def initial_parameters(self):
@@ -228,7 +238,7 @@ class AtomFileReader:
         dt = time.perf_counter() - t0
         self.profile['neighbor_time'] += dt
         self.profile['neighbor_builds'] += 1
-        print(f"Neighbor list has been updated, edge number change to: {self.graph_data.edge_index.shape[1]}")
+        # debug: print(f"Neighbor list updated: {self.graph_data.edge_index.shape[1]} edges")
 
     # Helper methods for cutoff filtering
     def get_cutoff_mask(self):
@@ -352,14 +362,18 @@ class AtomFileReader:
         )
 
     @staticmethod
-    def calculate_edge_attr(pos,edge_index,box_length):
+    def calculate_edge_attr(pos, edge_index, box):
+        """
+        box: Box 对象 或 标量/张量 box_length（向后兼容）。
+        """
         row, col = edge_index[0], edge_index[1]
-        pos_i = pos[row]
-        pos_j = pos[col]
-        rij = pos_j - pos_i
-        rij = rij - box_length * torch.round(rij / box_length)
-        distances = torch.norm(rij, dim=1, keepdim=False)
-        return distances
+        rij = pos[row] - pos[col]
+        if isinstance(box, Box):
+            rij = box.minimum_image(rij)
+        else:
+            bl = float(box) if not torch.is_tensor(box) else box.float()
+            rij = rij - bl * torch.round(rij / bl)
+        return torch.norm(rij, dim=1)
 
     @staticmethod
     def build_cell_list(pos, box_length, cutoff):
@@ -461,15 +475,12 @@ class AtomFileReader:
         return expanded_pos, expanded_indices, expanded_shifts
 
     def find_neighbors_kdtree(self, pos, cutoff):
-        print("Using GPU-accelerated neighbor search")
-        edge_index, edge_attr = find_neighbors_gpu_pbc(pos, cutoff, self.box_length)
-        ### Filter out self-loops and ensure edge_index is ordered
+        edge_index, edge_attr = find_neighbors_gpu_pbc(pos, cutoff, self.box)
+        # 确保 i < j（上三角，消除重复边）
         mask = edge_index[0] < edge_index[1]
         edge_index = edge_index[:, mask]
-        edge_attr = edge_attr[mask]
-        # Recompute distances via minimum image for consistency with force
-        edge_attr = self.calculate_edge_attr(pos, edge_index, self.box_length)
-        #########################################################
+        # 用 box.minimum_image 重新精确计算距离
+        edge_attr = self.calculate_edge_attr(pos, edge_index, self.box)
         return edge_index, edge_attr
         
     def find_neighbors_kdtree_cpu(self, pos, cutoff):

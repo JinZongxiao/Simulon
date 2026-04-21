@@ -2,88 +2,194 @@
 
 [中文] | [English](README.md)
 
-一个基于 PyTorch 的轻量级分子动力学（MD）引擎，并提供可选的自定义 CUDA 加速内核。Simulon 注重清晰的代码结构、可扩展性与科研/工程实用工作流。
+一个基于 PyTorch 的轻量级分子动力学（MD）引擎，提供可选的自定义 CUDA 加速内核。Simulon 注重清晰的代码结构、可扩展性与科研/工程实用工作流。
 
-核心能力
-- PyTorch 优先：所有状态均存放在张量中，CPU/GPU 切换自然顺滑。
-- 可选 CUDA 加速：通过编译扩展（`simulon_cuda`）提供 LJ、EAM 与邻域搜索的高性能实现。
-- 力场模块化：内置 Lennard-Jones（CPU/CUDA）、EAM（CUDA）、Born–Mayer–Huggins，以及用户自定义对势模板。
-- 邻域搜索：包含 PBC 处理与 GPU 加速实现。
-- 积分器：简单稳健的速度 Verlet（NVT，带阻尼 gamma）。
-- I/O 与工具：XYZ 读写、日志记录、诊断绘图、数据集准备辅助等。
-- 机器学习势：示例性集成，可微调类似 CHGNet 的模型并用学习到的力进行 MD。
+---
 
-仓库结构
-- `core/`：MD 基础模块：力场、积分器、模拟器、分析器。
-- `io_utils/`：文件读写、日志、解析器（ASE/pymatgen）、EAM 解析、结构构造工具。
-- `cuda source/`：LJ/EAM/邻域搜索的 C++/CUDA 内核与 Python 绑定。
-- `run_scripts/`：可直接运行的示例：LJ、用户自定义对势、ML 势以及诊断绘图。
-- `run_data/`：示例体系（Ar、Cu、W 等）。
-- `simulation_agent/`：中英文交互助手，帮助生成与分析 MD 任务。
-- `cuda_test/`：CUDA 后端的最小测试与示例。
+## 最新更新
 
-环境依赖
+| 模块 | 变更内容 |
+|------|---------|
+| **系综** | NVE（微正则）、NVT（Langevin 热浴）、**NPT（Berendsen 压浴）** |
+| **三斜盒子** | 通过 `core/box.py` 支持完整 3×3 H 矩阵 PBC，正交与非正交统一接口 |
+| **Restart** | `save_checkpoint` / `load_checkpoint` — 保存坐标、速度、盒子、RNG 状态 |
+| **力场** | LJ、EAM、BMH 均新增 `virial` 返回值，支持 NPT 压力耦合 |
+| **邻居搜索** | 修复重复边 Bug；Box-aware 最小镜像；CUDA 内核前缀和 O(N²)→O(1) |
+| **BMH** | 全面重写：边列化解析力，消除 O(N²) 内存分配 |
+| **EAM** | 删除死代码；向量化查表（无 Python 循环）；加入 virial |
+| **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
+
+---
+
+## 核心能力
+
+- **PyTorch 优先**：所有状态均存放在张量中，一行代码切换 CPU/GPU。
+- **三种系综**：NVE、NVT（Langevin 热浴）、NPT（Berendsen 压浴 + Langevin）。
+- **三斜 PBC**：统一 `Box` 类，通过 3×3 格矢矩阵处理立方、正交、任意三斜盒子。
+- **Verlet 邻居表**：基于位移阈值（skin/2）的惰性重建；可选 CUDA 扩展加速。
+- **模块化力场**：Lennard-Jones、EAM、Born–Mayer–Huggins，以及用户自定义对势模板。
+- **Restart**：完整断点续跑支持，每 N 步保存一次，重启无需重新平衡。
+- **RDF 分析器**：在线累积，同类/异类原子对均有正确归一化。
+- **I/O 与工具**：XYZ 读写、CSV 能量日志、轨迹输出、EAM 表格解析、pymatgen/ASE 集成。
+- **机器学习势**：示例性接入 CHGNet 类模型。
+
+---
+
+## 仓库结构
+
+```
+core/
+  box.py                  # 统一正交+三斜 PBC（H 矩阵）
+  barostat.py             # Berendsen 各向同性 NPT 压浴
+  md_model.py             # SumBackboneInterface、BaseModel（主 MD 循环）
+  md_simulation.py        # MDSimulator：运行循环、日志、轨迹输出
+  analyser.py             # RDF 累积器
+  energy_minimizer.py     # 最速下降能量最小化
+  force/
+    lennard_jones_force.py
+    eam_force.py
+    born_mayer_huggins_force.py
+    template/pair_force_template.py
+  integrator/integrator.py  # 速度 Verlet（NVE / NVT / NPT）
+  neighbor_search/gpu_kdtree.py
+
+io_utils/
+  reader.py               # AtomFileReader：XYZ → 张量 + 邻居表
+  restart.py              # save_checkpoint / load_checkpoint
+  writer.py / output_logger.py / eam_parser.py / ...
+
+cuda source/
+  neighbor_search_kernel.cu
+  lj_energy_force*.cu
+  eam_cuda_ext*.cu
+
+run_scripts/
+  demo_ar_nvt.py          # 快速演示：100 原子 Ar NVT
+  lj_run.py               # JSON 驱动的 LJ 模拟
+  user_defined_run.py
+  mlps_run.py
+  plot_md_diagnostics.py
+
+run_data/                 # 示例结构（Ar、Cu、W 等）
+simulation_agent/         # 中英文交互 MD 助手
+```
+
+---
+
+## 环境依赖
+
 - Python 3.10+（已在 3.11 测试）
-- PyTorch（可选 CUDA）。参考 https://pytorch.org 获取安装方式。
-- 第三方包：numpy、scipy、matplotlib、ase、pymatgen、tqdm
-- 可选（用于 ML 示例）：chgnet
+- PyTorch ≥ 2.0（可选 CUDA）。参考 https://pytorch.org
+- `numpy scipy matplotlib ase pymatgen tqdm torch_geometric`
+- 可选（ML 示例）：`chgnet`
 
-快速安装
-- 基础 Python 依赖：
-  - `pip install torch`（按照你的 CUDA/CPU 环境选择安装）
-  - `pip install numpy scipy matplotlib ase pymatgen tqdm`
-  - 可选：`pip install chgnet`
-- CUDA 扩展（可选但推荐以获得更好性能）：
-  - 先决条件：与你的 PyTorch 匹配的 C++ 工具链与 CUDA 工具包。
-  - 本地构建：`python setup.py build_ext --inplace`
-  - Windows 用户：确保已安装 MSVC Build Tools，且 CUDA 在 PATH 中。
-  - 说明：仓库已包含适用于 Python 3.11/Windows 的预编译文件 `simulon_cuda.cp311-win_amd64.pyd`，若环境匹配可直接使用，否则建议从源码编译。
+---
 
-快速开始
-1）Lennard-Jones MD
-- 如需修改输入，在 `run_scripts/lj_run.json` 中调整（结构路径、盒长、LJ 参数、截断、温度、步数、输出目录等）。
-- 运行：
-  - `python run_scripts/lj_run.py --config run_scripts/lj_run.json`
-- 输出（默认写入 `run_data/output/`）：
-  - 能量曲线 PNG、轨迹 `MD_traj_<timestamp>.xyz`、力 `forces_<timestamp>.xyz` 与日志等。
+## 安装
 
-2）用户自定义对势
-- 在 `run_scripts/user_defined_run.json` 中定义你的势函数，例如 `0.5 * k * (r - 1)**2`，并设置每对原子的参数。
-- 运行：
-  - `python run_scripts/user_defined_run.py --config run_scripts/user_defined_run.json`
+```bash
+# 1. Python 依赖
+pip install torch torchvision torchaudio          # 按实际 CUDA 版本选择
+pip install numpy scipy matplotlib ase pymatgen tqdm
+pip install torch_geometric
 
-3）机器学习势（示例）
-- 编辑 `run_scripts/mlps_run.json`，指定 AIMD 的位置信息/力文件及训练超参。
-- 需要额外依赖（如 `chgnet`）。
-- 运行：
-  - `python run_scripts/mlps_run.py --config run_scripts/mlps_run.json`
+# 2. CUDA 扩展（可选，大体系推荐）
+#    需要：MSVC Build Tools（Windows）或 GCC，以及匹配的 CUDA 工具包
+python setup.py build_ext --inplace
+```
 
-4）诊断绘图
-- 一键生成能量/力/MSD/RDF/度分布等综合诊断图：
-  - `python run_scripts/plot_md_diagnostics.py --steps 500`
-- 图片将输出到 `run_data/output/plots_YYYYmmdd_HHMMSS/`。
+> **Windows 说明**：仓库已包含适用于 Python 3.11 + CUDA 12.x 的预编译 `simulon_cuda.cp311-win_amd64.pyd`，若环境匹配可直接使用，否则建议从源码编译。
 
-配置要点
-- JSON 配置中常见字段：
-  - `data_path_xyz`：输入结构（.xyz）
-  - `box_length`：立方盒长度（Å）
-  - `pair_parameter`：对参数；LJ 需 `epsilon`/`sigma`；自定义势使用你在公式中的参数名（如 `k`）。
-  - `potential_formula`：仅用于自定义势（例如 `0.5 * k * (r - 1)**2`）。
-  - `cut_off`：邻域截断（Å）
-  - `dt`：时间步长（fs 或你保持一致的自定义单位）
-  - `temperature`：NVT 目标温度，可为标量或按类型的向量
-  - `gamma`：NVT 摩擦系数
-  - `num_steps`、`print_interval`、`output_save_path`
+---
 
-使用提示
-- GPU/CPU：若可用将自动选用 CUDA，否则退回 CPU。
-- PBC：周期性边界已在内部处理；请确保 `box_length` 与体系一致。
-- 大规模体系建议启用 CUDA 扩展以获得更好性能。
+## 快速开始
 
-常见问题
-- CUDA 构建失败：请确保 CUDA 版本与 PyTorch 对应，且 MSVC/Clang 工具链安装正确。
-- 缺少包：确认已安装所需依赖，运行脚本时保证仓库根目录在 `PYTHONPATH` 中或在仓库根目录下执行。
+### 1. 即刻演示 — Ar NVT
 
-贡献
-- 欢迎提交 Issue/PR。反馈问题时请尽量提供最小可复现示例或小型输入结构。
+```bash
+python run_scripts/demo_ar_nvt.py
+```
 
+100 个 Ar 原子，FCC 结构，LJ 力场，Langevin NVT 90 K，500 步。轨迹和能量 CSV 输出到 `run_output/demo_ar_nvt/`。
+
+### 2. JSON 驱动的 LJ 模拟
+
+```bash
+python run_scripts/lj_run.py --config run_scripts/lj_run.json
+```
+
+编辑 `lj_run.json` 调整结构、盒长、LJ 参数、系综、温度与输出路径。
+
+### 3. NPT 模拟（Python API）
+
+```python
+from io_utils.reader import AtomFileReader
+from core.force.lennard_jones_force import LennardJonesForce
+from core.md_model import SumBackboneInterface, BaseModel
+from core.integrator.integrator import VerletIntegrator
+from core.barostat import BerendsenBarostat
+from core.md_simulation import MDSimulator
+
+mol   = AtomFileReader('structure.xyz', box_length=30.0, cutoff=10.0,
+                       parameter={"[0 0]": {"epsilon": 0.0104, "sigma": 3.4}})
+ff    = LennardJonesForce(mol)
+integ = VerletIntegrator(mol, dt=0.001, ensemble='NPT',
+                         temperature=(300, 300), gamma=0.01)
+baro  = BerendsenBarostat(mol, target_pressure=1.0, tau_p=0.5)
+model = BaseModel(SumBackboneInterface([ff], mol), integ, mol, barostat=baro)
+
+MDSimulator(model, num_steps=5000, print_interval=100).run()
+```
+
+### 4. 三斜盒子
+
+```python
+from core.box import Box
+import torch
+
+H = torch.tensor([[a, 0, 0],
+                  [b*cos(gamma), b*sin(gamma), 0],
+                  [...]])          # 任意合法格矢矩阵
+mol = AtomFileReader('structure.xyz', box_length=a, box_vectors=H, ...)
+```
+
+### 5. Restart / 断点续跑
+
+```python
+from io_utils.restart import save_checkpoint, load_checkpoint
+
+# 每 1000 步保存一次
+save_checkpoint(model, step=1000, path='ckpt.pt')
+
+# 续跑
+next_step = load_checkpoint(model, path='ckpt.pt')
+for step in range(next_step, total_steps):
+    model()
+```
+
+---
+
+## 系综对照表
+
+| 系综 | `VerletIntegrator` 参数 | 附加组件 |
+|------|------------------------|---------|
+| NVE | `ensemble='NVE'` | — |
+| NVT | `ensemble='NVT', temperature=(T_init, T_target), gamma=γ` | Langevin |
+| NPT | `ensemble='NPT', temperature=(T_init, T_target), gamma=γ` | + `BerendsenBarostat` 传入 `BaseModel` |
+
+---
+
+## 常见问题
+
+| 问题 | 解决方法 |
+|------|---------|
+| CUDA 编译失败 | 确认 `nvcc --version` 与 PyTorch CUDA 版本一致；Windows 需 MSVC ≥ 2019 |
+| `ImportError: simulon_cuda` | 重新编译：`python setup.py build_ext --inplace` |
+| `KeyError '[0 0]'` | 参数字典键须为 `str(np.array([type_i, type_j]))`，单元素体系用 `"[0 0]"` |
+| 初始温度不对 | `temperature=(T_init, T_target)`，第一个值用于初始化 Maxwell-Boltzmann 速度 |
+
+---
+
+## 贡献
+
+欢迎提交 Issue / PR。反馈问题时请尽量提供最小可复现示例或小型输入结构。

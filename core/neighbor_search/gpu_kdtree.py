@@ -9,143 +9,136 @@ except ImportError:
 
 class GPUKDTree:
     def __init__(self, points):
-
         self.points = points
         self.device = points.device
 
     def query_pairs(self, r):
-
         n = self.points.shape[0]
-
         i_indices = torch.arange(n, device=self.device)
         j_indices = torch.arange(n, device=self.device)
-
         mask = i_indices.unsqueeze(1) < j_indices.unsqueeze(0)
         i_pairs = i_indices.unsqueeze(1).expand(n, n)[mask]
         j_pairs = j_indices.unsqueeze(0).expand(n, n)[mask]
-
         points_i = self.points[i_pairs]
         points_j = self.points[j_pairs]
-
         diff = points_i - points_j
         dist_sq = torch.sum(diff * diff, dim=1)
-
         valid_mask = dist_sq < r ** 2
         valid_i = i_pairs[valid_mask]
         valid_j = j_pairs[valid_mask]
-
         result = [(i.item(), j.item()) for i, j in zip(valid_i, valid_j)]
         return result
 
     def batch_query_pairs(self, r, batch_size=1000):
-
         n = self.points.shape[0]
         result = []
-
         for i_start in range(0, n, batch_size):
             i_end = min(i_start + batch_size, n)
             i_points = self.points[i_start:i_end]
-
             for j_start in range(i_start, n, batch_size):
                 j_end = min(j_start + batch_size, n)
                 j_points = self.points[j_start:j_end]
-
-                i_expanded = i_points.unsqueeze(1)  # [batch_i, 1, 3]
-                j_expanded = j_points.unsqueeze(0)  # [1, batch_j, 3]
-
-                diff = i_expanded - j_expanded  # [batch_i, batch_j, 3]
-                dist_sq = torch.sum(diff * diff, dim=2)  # [batch_i, batch_j]
-
+                i_expanded = i_points.unsqueeze(1)
+                j_expanded = j_points.unsqueeze(0)
+                diff = i_expanded - j_expanded
+                dist_sq = torch.sum(diff * diff, dim=2)
                 i_idx, j_idx = torch.where(dist_sq < r ** 2)
-
                 i_idx += i_start
                 j_idx += j_start
-
                 valid_mask = i_idx < j_idx
                 i_idx = i_idx[valid_mask]
                 j_idx = j_idx[valid_mask]
-
                 for i, j in zip(i_idx, j_idx):
                     result.append((i.item(), j.item()))
-
         return result
 
 
-def find_neighbors_gpu_pbc(positions, cutoff, box_length, batch_size=2000):
-
+def find_neighbors_gpu_pbc(positions, cutoff, box, batch_size=2000):
+    """
+    box: Box 对象（支持三斜）或 标量/张量 box_length（向后兼容）。
+    """
     device = positions.device
-    
-    # Try to use CUDA kernel if available
-    if CUDA_AVAILABLE and device.type == 'cuda':
+
+    # CUDA kernel 路径：仅支持正交盒子（scalar box_length）
+    _is_box_obj = hasattr(box, 'minimum_image')
+    _orthogonal  = (not _is_box_obj) or box.is_orthogonal
+
+    if CUDA_AVAILABLE and device.type == 'cuda' and _orthogonal:
+        bl = float(box.diag[0]) if _is_box_obj else float(box)
         try:
             edge_index, edge_attr = simulon_cuda.neighbor_search_cuda(
-                positions.contiguous(), 
-                float(cutoff), 
-                float(box_length)
+                positions.contiguous(), float(cutoff), bl
             )
             return edge_index, edge_attr
         except Exception as e:
             print(f"CUDA kernel failed, falling back to PyTorch: {e}")
-    
-    # Fallback to PyTorch implementation
-    return find_neighbors_gpu_pbc_pytorch(positions, cutoff, box_length, batch_size)
+
+    return find_neighbors_gpu_pbc_pytorch(positions, cutoff, box, batch_size)
 
 
-def find_neighbors_gpu_pbc_pytorch(positions, cutoff, box_length, batch_size=2000):
+def find_neighbors_gpu_pbc_pytorch(positions, cutoff, box, batch_size=None):
     """
-    PyTorch-based GPU neighbor search (original implementation)
+    优化版邻居搜索：单层i-batch循环，向量化对比所有N个j原子。
+    支持正交和三斜盒子（通过 Box 对象）。
+
+    box: Box 对象 或 标量 box_length（向后兼容）。
     """
     device = positions.device
     n = positions.shape[0]
+    rc2 = cutoff * cutoff
 
-    edge_indices = []
-    edge_attrs = []
+    # 构造最小镜像函数
+    _is_box_obj = hasattr(box, 'minimum_image')
+    if _is_box_obj:
+        def _min_image(r):          # r: [B, N, 3]
+            shape = r.shape
+            return box.minimum_image(r.reshape(-1, 3)).reshape(shape)
+    else:
+        bl = float(box)
+        def _min_image(r): return r - bl * torch.round(r / bl)
+
+    # 根据可用显存自动计算 batch_size（目标单批次 ≤ 512 MB）
+    if batch_size is None:
+        if device.type == 'cuda':
+            target_bytes = 512 * 1024 * 1024
+            batch_size = max(64, target_bytes // (n * 3 * 4))
+            batch_size = min(batch_size, n)
+        else:
+            batch_size = min(2000, n)
+
+    edge_i_list = []
+    edge_j_list = []
+
+    j_global = torch.arange(n, device=device)
 
     for i_start in range(0, n, batch_size):
         i_end = min(i_start + batch_size, n)
-        i_indices = torch.arange(i_start, i_end, device=device)
-        i_pos = positions[i_start:i_end]
+        i_pos = positions[i_start:i_end]          # [B, 3]
 
-        for j_start in range(0, n, batch_size):
-            j_end = min(j_start + batch_size, n)
-            j_indices = torch.arange(j_start, j_end, device=device)
-            j_pos = positions[j_start:j_end]
+        rij = i_pos.unsqueeze(1) - positions.unsqueeze(0)  # [B, N, 3]
+        rij = _min_image(rij)
+        dist_sq = (rij * rij).sum(-1)                       # [B, N]
 
-            rij = i_pos.unsqueeze(1) - j_pos.unsqueeze(0)
-            rij = rij - box_length * torch.round(rij / box_length)
+        # upper-triangle过滤：全局 i < 全局 j（消除重复边和自身对）
+        i_global = torch.arange(i_start, i_end, device=device).unsqueeze(1)  # [B, 1]
+        upper_mask = i_global < j_global.unsqueeze(0)                         # [B, N]
 
-            dist_sq = torch.sum(rij * rij, dim=2)
+        mask = upper_mask & (dist_sq < rc2)
+        bi, bj = torch.where(mask)          # bi: batch内局部索引, bj: 全局j索引
 
-            mask = (dist_sq < cutoff ** 2)
-            if i_start == j_start:
-                diag_mask = torch.eye(i_end - i_start, j_end - j_start, device=device, dtype=torch.bool)
-                mask = mask & ~diag_mask
+        if bi.numel() > 0:
+            edge_i_list.append(bi + i_start)
+            edge_j_list.append(bj)
 
-            if i_start > j_start:
-                i_expanded = i_indices.unsqueeze(1).expand(i_end - i_start, j_end - j_start)
-                j_expanded = j_indices.unsqueeze(0).expand(i_end - i_start, j_end - j_start)
-                upper_mask = i_expanded < j_expanded
-                mask = mask & upper_mask
-
-            i_idx, j_idx = torch.where(mask)
-
-            i_idx += i_start
-            j_idx += j_start
-
-            if i_idx.numel() > 0:
-                pos_i = positions[i_idx]
-                pos_j = positions[j_idx]
-
-                r_ij = pos_j - pos_i
-                r_ij = r_ij - box_length * torch.round(r_ij / box_length)
-                dist = torch.norm(r_ij, dim=1)
-
-                edge_indices.append(torch.stack([i_idx, j_idx], dim=0))
-                edge_attrs.append(dist)
-
-    if edge_indices:
-        edge_index = torch.cat(edge_indices, dim=1)
-        edge_attr = torch.cat(edge_attrs)
-        return edge_index, edge_attr
+    if edge_i_list:
+        ei = torch.cat(edge_i_list)
+        ej = torch.cat(edge_j_list)
+        # 只对筛选后的边重新计算精确距离（使用已定义的 _min_image 闭包）
+        rij_valid = _min_image(positions[ei] - positions[ej])
+        dist = torch.norm(rij_valid, dim=1)
+        return torch.stack([ei, ej]), dist
     else:
-        return torch.zeros((2, 0), device=device, dtype=torch.long), torch.zeros(0, device=device)
+        return (
+            torch.zeros((2, 0), device=device, dtype=torch.long),
+            torch.zeros(0, device=device),
+        )

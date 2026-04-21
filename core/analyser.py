@@ -73,22 +73,40 @@ class RDFAccumulator:
         return hist
 
     def _normalize(self, h: torch.Tensor):
+        """
+        统一的 g(r) 归一化。
+
+        无论是否指定 type_pair，归一化公式均为：
+            g(r) = h(r) * V / (N1 * N2 * 4π r² Δr)
+        其中：
+          - 无 type_pair：N1 = N2 = N（但 h(r) 已经是半列表，须乘2）
+          - 有 type_pair：N1, N2 为各类型原子数
+        """
         N = self.mol.atom_count
         r_centers = (torch.arange(self.nbins, dtype=torch.float64, device=self.device) + 0.5) * self.dr
-        shell = 4.0 * math.pi * (r_centers**2) * self.dr
+        shell = 4.0 * math.pi * (r_centers ** 2) * self.dr  # 球壳体积
+
         if self.type_pair is None:
-            denom = (N * N) * shell
-            g = torch.zeros_like(r_centers)
-            valid = shell > 0
-            g[valid] = (2.0 * self.volume * h[valid]) / denom[valid]
+            # 半列表（i<j）计数；理想气体参考密度 = N*(N-1)/2 对 / V
+            N1, N2 = N, N
+            # h 统计的是 i<j 对数；参考：N*(N-1)/2 * shell/V
+            ideal = 0.5 * N1 * (N2 - 1) * shell / self.volume
         else:
             t1_mask, t2_mask = self._select_indices()
             N1 = int(t1_mask.sum().item())
             N2 = int(t2_mask.sum().item())
-            denom = (N1 * N2) * shell / self.volume
-            g = torch.zeros_like(r_centers)
-            valid = (denom > 0)
-            g[valid] = h[valid] / denom[valid]
+            # 异种对：N1*N2；同种对：N1*(N1-1)/2 — 统一用 N1*N2 处理异种
+            same_species = (self.type_pair[0] == self.type_pair[1])
+            if same_species:
+                ideal = 0.5 * N1 * (N2 - 1) * shell / self.volume
+            else:
+                ideal = 0.5 * N1 * N2 * shell / self.volume  # 半列表对数参考
+
+        g = torch.zeros_like(r_centers)
+        valid = ideal > 0
+        g[valid] = h[valid] / ideal[valid]
+
+        # 配位数：g(r) 对 r 积分，乘以数密度
         rho_all = N / self.volume
         coord = torch.cumsum(g * shell * rho_all, dim=0)
         return r_centers, g, coord
