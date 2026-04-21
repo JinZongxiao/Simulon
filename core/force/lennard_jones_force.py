@@ -66,11 +66,12 @@ class LennardJonesForce(BackboneInterface, nn.Module):
             sr_rc   = sigma / rc
             sr6_rc  = sr_rc ** 6
             sr12_rc = sr6_rc ** 2
-            U_rc       = 4.0 * epsilon * (sr12_rc - sr6_rc)
-            dUdr_rc    = 24.0 * epsilon * (-(sigma**12) * 2.0 / rc**13 + sigma**6 / rc**7)
-            Fmag_rc    = 24.0 * epsilon * (1.0 / rc) * (2.0 * sr12_rc - sr6_rc)
-            U_eff = U_raw - U_rc - (r - rc) * dUdr_rc
-            Fmag  = Fmag_raw - Fmag_rc
+            U_rc    = 4.0 * epsilon * (sr12_rc - sr6_rc)
+            # dU/dr|_rc = 24ε(2σ¹²/rc¹³ - σ⁶/rc⁷)，即 Fmag_rc / rc
+            # U_eff(r) = U(r) - U(rc) - (r - rc)·dU/dr|_rc
+            Fmag_rc = 24.0 * epsilon * (1.0 / rc) * (2.0 * sr12_rc - sr6_rc)
+            U_eff   = U_raw - U_rc + (r - rc) * Fmag_rc   # dU/dr|_rc = -Fmag_rc
+            Fmag    = Fmag_raw - Fmag_rc
 
         else:
             U_eff = U_raw

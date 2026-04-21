@@ -1,17 +1,17 @@
 {
-  "data_path_xyz": "../run_data/Ar.xyz",
-  "box_length": 80,
+  "data_path_xyz": "run_data/Ar/Ar.xyz",
+  "box_length": 16.901,
   "pair_parameter": {
     "[0 0]": {
       "epsilon": 0.0104,
       "sigma"  : 3.405
     }
   },
-  "cut_off": 17.5,
-  "dt": 10,
-  "temperature": [94.4,94.4],
-  "gamma": 1,
+  "cut_off": 8.5,
+  "dt": 0.001,
+  "temperature": [94.4, 94.4],
+  "gamma": 0.01,
   "num_steps": 100,
-  "print_interval": 1,
-  "output_save_path": "../run_data/output"
+  "print_interval": 10,
+  "output_save_path": "run_output/lj_run"
 }

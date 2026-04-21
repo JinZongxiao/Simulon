@@ -133,10 +133,10 @@ class MachineLearningForce(BackboneInterface, nn.Module):
                 trace = float(stress_gpa[0] + stress_gpa[1] + stress_gpa[2])
             else:
                 trace = float(np.trace(stress_gpa.reshape(3, 3)))
-            # 换算：1 GPa·Å³ = 6.2415 eV
+            # 换算：1 GPa·Å³ = 1e-21 J / 1.60218e-19 J/eV = 6.2415e-3 eV
             # V in Å³
             V = self._volume()
-            virial = torch.tensor(-trace / 3.0 * V * 6.2415,
+            virial = torch.tensor(-trace / 3.0 * V * 6.2415e-3,
                                   dtype=torch.float32, device=self.device)
 
         return {'energy': total_energy, 'forces': forces, 'virial': virial}

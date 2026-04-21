@@ -73,7 +73,7 @@ def minimize_energy_steepest_descent(model, max_steps=10000, step_size=0.002, fo
 
             max_force = torch.norm(forces, dim=1).max().item()
             if (step + 1) % print_interval == 0 or step == 0:
-                print(f"Step {step+1}/{max_steps} -> Energy: {energy.item():.4f} eV, Max Force: {max_force:.6f} eV/Å")
+                print(f"Step {step+1}/{max_steps} -> Energy: {energy.item():.4f} eV, Max Force: {max_force:.6f} eV/Ang")
 
             if max_force < force_threshold:
                 print(f"\nConvergence reached at step {step+1}.")
@@ -129,5 +129,5 @@ def minimize_energy_steepest_descent(model, max_steps=10000, step_size=0.002, fo
         final_max_force = torch.norm(out_final['forces'], dim=1).max().item()
 
     print(f"--- Steepest Descent Finished ---")
-    print(f"Final Energy: {final_energy:.4f} eV, Final Max Force: {final_max_force:.6f} eV/Å")
+    print(f"Final Energy: {final_energy:.4f} eV, Final Max Force: {final_max_force:.6f} eV/Ang")
     return final_energy

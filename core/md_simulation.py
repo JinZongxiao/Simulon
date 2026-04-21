@@ -203,7 +203,7 @@ class MDSimulator:
                 step_data_cpu = {k: v.detach().cpu().item() for k, v in step_data.items()}
                 total_energy = step_data_cpu['energy'] + step_data_cpu['kinetic_energy']
                 print(
-                    f"Step {step + 1}/{self.num_steps}:Tot_E={total_energy:.4f} ev, Pot_E = {step_data_cpu['energy']:.4f} ev, Kin_E = {step_data_cpu['kinetic_energy']:.4f} ev, T = {step_data_cpu['temperature']:.4f} K, Density = {rho: .4f} g/cm³"
+                    f"Step {step + 1}/{self.num_steps}:Tot_E={total_energy:.4f} ev, Pot_E = {step_data_cpu['energy']:.4f} ev, Kin_E = {step_data_cpu['kinetic_energy']:.4f} ev, T = {step_data_cpu['temperature']:.4f} K, Density = {rho: .4f} g/cm3"
                 )
                 t_out1 = time.perf_counter()
                 self.sim_profile['output_time'] += (t_out1 - t_out0)
@@ -291,3 +291,50 @@ class MDSimulator:
         except Exception:
             pass
         print(f"Performance: {ns_per_day:.3f} ns/day, {steps_per_s:.3f} steps/s, {matom_steps_per_s:.3f} Matom-step/s")
+
+    # ── post-run save helpers ─────────────────────────────────────────────────
+    def save_energy_curve(self, path: str):
+        """
+        Save a PNG plot of potential energy vs step number.
+        Uses the energies.csv written during the run (if output_dir was set)
+        or falls back to the in-memory energy_list buffer.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        steps, pot_energies = [], []
+
+        # Prefer the CSV written during the run (more complete)
+        csv_path = self._paths.get('energies', '')
+        if csv_path and os.path.exists(csv_path):
+            try:
+                with open(csv_path, 'r') as f:
+                    next(f)  # skip header
+                    for line in f:
+                        parts = line.strip().split(',')
+                        if len(parts) >= 2:
+                            steps.append(int(parts[0]))
+                            pot_energies.append(float(parts[1]))
+            except Exception:
+                steps, pot_energies = [], []
+
+        # Fall back to in-memory buffer
+        if not pot_energies and len(self.energy_list) > 0:
+            e = np.asarray(self.energy_list).ravel()
+            steps = list(range(1, len(e) + 1))
+            pot_energies = e.tolist()
+
+        if not pot_energies:
+            print(f"[save_energy_curve] No energy data available; skipping plot.")
+            return
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(steps, pot_energies, linewidth=1.0, color='steelblue')
+        ax.set_xlabel('Step')
+        ax.set_ylabel('Potential Energy (eV)')
+        ax.set_title('MD Potential Energy')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        fig.tight_layout()
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
