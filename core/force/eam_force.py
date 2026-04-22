@@ -308,41 +308,73 @@ class EAMForce(nn.Module):
         frac  = idx_f - idx.float()
         nidx  = (idx + 1).clamp(max=self.n_r - 1)
 
-        # ── Phase 1: 电子密度累加 ────────────────────────────────────────
-        # density_table_stack[col_type, idx]: j 原子贡献给 i 的密度
-        f0 = self.density_table_stack[col_types, idx]
-        f1 = self.density_table_stack[col_types, nidx]
-        dens_pairs = f0 + frac * (f1 - f0)
+        # ── Phase 1: 电子密度累加（双向，修复 half-list 单向缺失）────────
+        #
+        # 邻居表为 half-list（row_c=i < col_c=j），原代码只做了：
+        #   rho[i] += f_j(r_ij)
+        # 漏掉了：
+        #   rho[j] += f_i(r_ij)
+        # 导致索引较大的原子密度严重偏低（最后一个原子密度为零）。
+        #
+        # f_col(r)：col(j) 原子的密度函数，贡献给 row(i) 的 ρ_i
+        f0_col = self.density_table_stack[col_types, idx]
+        f1_col = self.density_table_stack[col_types, nidx]
+        dens_from_col = f0_col + frac * (f1_col - f0_col)
+
+        # f_row(r)：row(i) 原子的密度函数，贡献给 col(j) 的 ρ_j（原来缺失）
+        f0_row = self.density_table_stack[row_types, idx]
+        f1_row = self.density_table_stack[row_types, nidx]
+        dens_from_row = f0_row + frac * (f1_row - f0_row)
 
         rho = torch.zeros(num_atoms, device=self.device, dtype=distances.dtype)
-        rho.scatter_add_(0, row_c, dens_pairs)
+        rho.scatter_add_(0, row_c, dens_from_col)   # ρ_i += f_j(r_ij)
+        rho.scatter_add_(0, col_c, dens_from_row)   # ρ_j += f_i(r_ij)  ← 修复
 
         # ── Phase 2: Embedding 能量与 dF/drho ───────────────────────────
         embed_E, dF_drho = self._interp_embed_all(rho)
         total_embedding_energy = embed_E.sum()
 
-        # ── Phase 3: 对势能 ──────────────────────────────────────────────
-        # pair_table_stack[row_type, col_type, idx]
+        # ── Phase 3: 对势能（half-list 每对唯一，去掉错误的 0.5）─────────
+        #
+        # parser 已将文件中的 r·φ(r) 除以 r，pair_table 存储真正的 φ(r)。
+        # half-list 下 pair_vals.sum() = Σ_{i<j} φ(r_ij) = 正确总对势能。
+        # 原有 0.5 因子是为 full-list 设计的，在 half-list 下使能量偏低一半。
         p0 = self.pair_table_stack[row_types, col_types, idx]
         p1 = self.pair_table_stack[row_types, col_types, nidx]
         pair_vals = p0 + frac * (p1 - p0)
-        total_pair_potential = 0.5 * pair_vals.sum()
+        total_pair_potential = pair_vals.sum()          # ← 去掉 0.5
 
         total_energy = total_embedding_energy + total_pair_potential
 
-        # ── Phase 4: 力 ─────────────────────────────────────────────────
-        # df/dr (密度导数): 按 col_type 查表
-        fd0 = self.density_deriv_table_stack[col_types, idx]
-        fd1 = self.density_deriv_table_stack[col_types, nidx]
-        d_density_dr = fd0 + frac * (fd1 - fd0)
+        # ── Phase 4: 力（修复力公式，分别使用 row/col 密度导数）──────────
+        #
+        # 正确的 EAM 力幅值（对 single-element 和 multi-element 均适用）：
+        #   f_scalar = dF_i/dρ_i · df_j(r)/dr   [i 的嵌入梯度 × j 的密度导数]
+        #            + dF_j/dρ_j · df_i(r)/dr   [j 的嵌入梯度 × i 的密度导数]
+        #            + dφ_ij(r)/dr               [对势导数]
+        #
+        # 原代码将两个密度导数混用为同一个 d_density_dr（col_type 的导数），
+        # 对 single-element 体系恰好相等无误，对 multi-element 会引入误差。
 
-        # dphi/dr (对势导数): 按 (row_type, col_type) 查表
+        # df_{type_j}(r)/dr：col(j) 原子密度函数的导数
+        fd0_col = self.density_deriv_table_stack[col_types, idx]
+        fd1_col = self.density_deriv_table_stack[col_types, nidx]
+        d_dens_dr_col = fd0_col + frac * (fd1_col - fd0_col)
+
+        # df_{type_i}(r)/dr：row(i) 原子密度函数的导数（原来缺失的 multi-element 项）
+        fd0_row = self.density_deriv_table_stack[row_types, idx]
+        fd1_row = self.density_deriv_table_stack[row_types, nidx]
+        d_dens_dr_row = fd0_row + frac * (fd1_row - fd0_row)
+
+        # dφ_ij(r)/dr
         pd0 = self.pair_deriv_table_stack[row_types, col_types, idx]
         pd1 = self.pair_deriv_table_stack[row_types, col_types, nidx]
         d_pair_dr = pd0 + frac * (pd1 - pd0)
 
-        dF_sum = dF_drho[row_c] + dF_drho[col_c]
-        force_scalar = dF_sum * d_density_dr + d_pair_dr
+        force_scalar = (dF_drho[row_c] * d_dens_dr_col
+                      + dF_drho[col_c] * d_dens_dr_row
+                      + d_pair_dr)
+
         unit_vec = rij_vec / (distances.unsqueeze(1) + 1e-8)
         force_vec = -force_scalar.unsqueeze(1) * unit_vec
 
@@ -350,7 +382,7 @@ class EAMForce(nn.Module):
         forces.scatter_add_(0, row_c.unsqueeze(1).expand_as(force_vec),  force_vec)
         forces.scatter_add_(0, col_c.unsqueeze(1).expand_as(force_vec), -force_vec)
 
-        # 维里（用于 NPT 压力）：W = Σ_edges force_scalar * r
+        # 维里（W = Σ_{i<j} force_scalar · r_ij，half-list 每对一次）
         virial = (force_scalar * distances).sum()
 
         return {'energy': total_energy, 'forces': forces, 'virial': virial}
