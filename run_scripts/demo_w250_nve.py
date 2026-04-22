@@ -1,10 +1,11 @@
 """
-demo_w250_nve.py — EAM/W NVE 中等规模演示
+demo_w250_nvt.py — EAM/W NVT 中等规模演示
 ==========================================
 系统 : 250 个 W 原子，BCC 结构（来自 run_data/W/W250.xyz）
 力场 : EAM/fs  WRe_YC2.eam.fs（W-only）
-系综 : NVE
+系综 : NVT-Langevin  T=300 K   gamma=0.01 ps^-1
 步长 : dt=0.001 ps (1 fs)   步数 : 500 步
+注   : BCC 完美晶体 v0=0 则力~0 原子不动；NVT 自动赋 Maxwell-Boltzmann 速度
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -59,10 +60,16 @@ print(f"Atoms   : {mol.atom_count}")
 print(f"Box     : {BOX_LENGTH} Ang")
 print(f"Edges   : {mol.graph_data.edge_index.shape[1]} (initial Verlet list)")
 
+# BCC W 是完美平衡结构，v0=0 则力≈0 原子不动。
+# 先用 NVT@300K 跑 50 步让系统获得热运动，再切换 NVE 看能量守恒。
+T_INIT   = 300.0   # K，初始化速度用
+GAMMA    = 0.01    # ps^-1
+
 # ── 力场 & 积分器 ────────────────────────────────────────────────────────────
 ff    = EAMForce(eam_parser, mol, use_tables=True)
 sb    = SumBackboneInterface([ff], mol)
-integ = VerletIntegrator(mol, dt=DT, ensemble='NVE')
+integ = VerletIntegrator(mol, dt=DT, ensemble='NVT',
+                         temperature=(T_INIT, T_INIT), gamma=GAMMA)
 model = BaseModel(sb, integ, mol)
 
 # ── MDSimulator ───────────────────────────────────────────────────────────────
@@ -77,7 +84,7 @@ sim = MDSimulator(
 )
 
 print(f"\n{'='*60}")
-print(f"  W 250-atom NVE   dt={DT} ps   {NUM_STEPS} steps")
+print(f"  W 250-atom NVT@{T_INIT}K + NVE   dt={DT} ps   {NUM_STEPS} steps")
 print(f"{'='*60}\n")
 
 result = sim.run(enable_minimize_energy=False)

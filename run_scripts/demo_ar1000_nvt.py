@@ -54,7 +54,13 @@ mol = AtomFileReader(
 )
 print(f"Atoms   : {mol.atom_count}")
 print(f"Box     : {BOX_LENGTH} Ang")
-print(f"Edges   : {mol.graph_data.edge_index.shape[1]} (initial Verlet list)")
+
+# Ar1000.xyz 坐标最大 ~62 Ang，超出 box_length=36.4，必须先 wrap 进盒再重建邻居表
+with torch.no_grad():
+    mol.coordinates.fmod_(BOX_LENGTH)          # 原地 wrap 到 [0, BOX)
+    mol.update_coordinates(mol.coordinates)    # 重建邻居表
+
+print(f"Edges   : {mol.graph_data.edge_index.shape[1]} (initial Verlet list, after wrap)")
 
 # ── 力场 & 积分器 ────────────────────────────────────────────────────────────
 ff    = LennardJonesForce(mol)
