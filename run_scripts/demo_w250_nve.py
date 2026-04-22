@@ -61,15 +61,19 @@ print(f"Box     : {BOX_LENGTH} Ang")
 print(f"Edges   : {mol.graph_data.edge_index.shape[1]} (initial Verlet list)")
 
 # BCC W 是完美平衡结构，v0=0 则力≈0 原子不动。
-# 先用 NVT@300K 跑 50 步让系统获得热运动，再切换 NVE 看能量守恒。
-T_INIT   = 300.0   # K，初始化速度用
-GAMMA    = 0.01    # ps^-1
+# 由能量均分：若 v0 为 T_INIT 的 MB 分布，平衡态 T_eq ≈ T_INIT/2
+# （因为一半初始动能流入势能）。因此：
+#   - 要在 300K 平衡 → 初始化 600K，或用强耦合 Langevin
+#   - gamma 太小（0.01）热浴特征时间 100 ps，500 步（0.5 ps）内基本没效果
+T_INIT   = 600.0   # K，初始化速度用（平衡到 ~300K）
+T_TARGET = 300.0   # K，Langevin 目标
+GAMMA    = 1.0     # ps^-1（特征时间 1 ps，500 步内足够耦合）
 
 # ── 力场 & 积分器 ────────────────────────────────────────────────────────────
 ff    = EAMForce(eam_parser, mol, use_tables=True)
 sb    = SumBackboneInterface([ff], mol)
 integ = VerletIntegrator(mol, dt=DT, ensemble='NVT',
-                         temperature=(T_INIT, T_INIT), gamma=GAMMA)
+                         temperature=(T_INIT, T_TARGET), gamma=GAMMA)
 model = BaseModel(sb, integ, mol)
 
 # ── MDSimulator ───────────────────────────────────────────────────────────────
@@ -84,7 +88,7 @@ sim = MDSimulator(
 )
 
 print(f"\n{'='*60}")
-print(f"  W 250-atom NVT@{T_INIT}K + NVE   dt={DT} ps   {NUM_STEPS} steps")
+print(f"  W 250-atom NVT  T_init={T_INIT}K -> T_target={T_TARGET}K  gamma={GAMMA}ps^-1  dt={DT}ps  {NUM_STEPS} steps")
 print(f"{'='*60}\n")
 
 result = sim.run(enable_minimize_energy=False)

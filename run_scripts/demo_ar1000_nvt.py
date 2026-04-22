@@ -29,8 +29,10 @@ BOX_LENGTH  = 36.40    # Ang
 CUTOFF      = 8.5      # Ang
 SKIN        = 2.0      # Ang
 DT          = 0.001    # ps
-TEMPERATURE = (90, 90) # (T_init, T_target)  K
-GAMMA       = 0.01     # ps^-1
+# 注：能量均分下 T_init 全为动能 → 一半流入势能 → T_eq = T_init/2
+# 要在 90K 平衡，T_init 要设成 180K；gamma=1.0 让热浴特征时间 1 ps
+TEMPERATURE = (180, 90)  # (T_init, T_target)  K
+GAMMA       = 1.0        # ps^-1
 NUM_STEPS   = 500
 PRINT_EVERY = 50
 
@@ -56,11 +58,14 @@ print(f"Atoms   : {mol.atom_count}")
 print(f"Box     : {BOX_LENGTH} Ang")
 
 # Ar1000.xyz 坐标最大 ~62 Ang，超出 box_length=36.4，必须先 wrap 进盒再重建邻居表
+# 注意：用 remainder (PyTorch 按 Python 语义处理负数) 而不是 fmod (保留符号)
 with torch.no_grad():
-    mol.coordinates.fmod_(BOX_LENGTH)          # 原地 wrap 到 [0, BOX)
-    mol.update_coordinates(mol.coordinates)    # 重建邻居表
+    mol.coordinates.copy_(mol.coordinates.remainder(BOX_LENGTH))  # 真正 wrap 到 [0, BOX)
+    mol.update_coordinates(mol.coordinates)                       # 重建邻居表
 
 print(f"Edges   : {mol.graph_data.edge_index.shape[1]} (initial Verlet list, after wrap)")
+print(f"Coord   : min={mol.coordinates.min().item():.3f}  max={mol.coordinates.max().item():.3f}")
+print(f"MinPair : {mol.graph_data.edge_attr.min().item():.4f} Ang (overlaps likely → need minimization)")
 
 # ── 力场 & 积分器 ────────────────────────────────────────────────────────────
 ff    = LennardJonesForce(mol)
@@ -84,7 +89,7 @@ print(f"\n{'='*60}")
 print(f"  Ar 1000-atom NVT @ {TEMPERATURE[1]} K   dt={DT} ps   {NUM_STEPS} steps")
 print(f"{'='*60}\n")
 
-result = sim.run(enable_minimize_energy=False)
+result = sim.run(enable_minimize_energy=True)   # Ar1000.xyz 有原子重叠（最小 0.14 Ang），必须先最小化
 
 print(f"\nOutput  : {OUTPUT_DIR}")
 
