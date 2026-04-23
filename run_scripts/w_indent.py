@@ -62,13 +62,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--vacuum-A", type=float, default=24.0)
     p.add_argument("--bottom-thickness-A", type=float, default=3.0)
     p.add_argument("--steps", type=int, default=1000)
+    p.add_argument("--equil-steps", type=int, default=500)
     p.add_argument("--dt", type=float, default=0.001)
     p.add_argument("--temperature", type=float, default=300.0)
     p.add_argument("--gamma", type=float, default=2.0)
     p.add_argument("--indenter-radius-A", type=float, default=8.0)
     p.add_argument("--indenter-stiffness", type=float, default=5.0, help="eV/A^3")
-    p.add_argument("--initial-depth-A", type=float, default=0.05)
-    p.add_argument("--indent-rate-A-ps", type=float, default=0.05)
+    p.add_argument("--initial-depth-A", type=float, default=0.0)
+    p.add_argument("--target-depth-A", type=float, default=2.0)
+    p.add_argument("--indent-rate-A-ps", type=float, default=None)
     p.add_argument("--print-interval", type=int, default=50)
     p.add_argument("--smoke", action="store_true")
     return p
@@ -88,6 +90,17 @@ def _make_slab_box(box_vectors: torch.Tensor, axis: int, vacuum_A: float) -> tor
     return h
 
 
+def _contact_center_height(coords, axis_unit, lateral_origin, radius: float) -> float:
+    heights = coords @ axis_unit
+    lateral = coords - heights.unsqueeze(1) * axis_unit
+    rho = torch.linalg.norm(lateral - lateral_origin.unsqueeze(0), dim=1)
+    inside = rho < float(radius)
+    if not bool(inside.any().item()):
+        return float(heights.max().item()) + float(radius)
+    clearance = torch.sqrt(torch.clamp(float(radius) ** 2 - rho[inside].pow(2), min=0.0))
+    return float((heights[inside] + clearance).max().item())
+
+
 def run_w_indent(args) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     base_output_dir = Path(args.output_dir)
@@ -96,8 +109,11 @@ def run_w_indent(args) -> dict:
 
     if args.smoke:
         args.steps = min(args.steps, 60)
+        args.equil_steps = min(args.equil_steps, 5)
         args.print_interval = min(args.print_interval, 10)
-        args.indent_rate_A_ps = min(args.indent_rate_A_ps, 0.05)
+        args.target_depth_A = min(args.target_depth_A, 0.08)
+        if args.indent_rate_A_ps is not None:
+            args.indent_rate_A_ps = min(args.indent_rate_A_ps, 0.5)
         if args.replicas is None:
             args.replicas = "3,3,3"
 
@@ -147,8 +163,23 @@ def run_w_indent(args) -> dict:
     anchor_height = float(top_projected[anchor_local].item())
 
     def center_at_depth(depth_A: float) -> torch.Tensor:
-        normal_position = anchor_height + float(args.indenter_radius_A) - float(depth_A)
+        normal_position = contact_center_height - float(depth_A)
         return anchor_perp + normal_position * axis_unit
+
+    if args.target_depth_A <= args.initial_depth_A:
+        raise ValueError("target-depth-A must be larger than initial-depth-A")
+    if args.indent_rate_A_ps is None:
+        indent_rate = (float(args.target_depth_A) - float(args.initial_depth_A)) / (
+            max(1, int(args.steps)) * float(args.dt)
+        )
+    else:
+        indent_rate = float(args.indent_rate_A_ps)
+    contact_center_height = _contact_center_height(
+        mol.coordinates,
+        axis_unit,
+        anchor_perp,
+        args.indenter_radius_A,
+    )
 
     eam_force = EAMForce(parser, mol)
     indenter = SphericalIndenterForce(
@@ -169,6 +200,25 @@ def run_w_indent(args) -> dict:
 
     with torch.no_grad():
         mol.atom_velocities[fixed_mask] = 0.0
+
+    if args.equil_steps > 0:
+        indenter.set_center(center_at_depth(-0.5))
+        for eq_step in range(args.equil_steps):
+            eq_out = model()
+            with torch.no_grad():
+                mol.coordinates[fixed_mask] = fixed_positions
+                mol.atom_velocities[fixed_mask] = 0.0
+                mol.update_coordinates(mol.coordinates)
+                mol.last_positions = mol.coordinates.detach().clone()
+            if (eq_step + 1) % max(1, args.print_interval) == 0:
+                print(f"Equil {eq_step + 1}/{args.equil_steps}: T={float(eq_out['temperature']):.2f} K")
+        contact_center_height = _contact_center_height(
+            mol.coordinates,
+            axis_unit,
+            anchor_perp,
+            args.indenter_radius_A,
+        )
+
     csv_path = output_dir / "load_depth.csv"
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -176,8 +226,11 @@ def run_w_indent(args) -> dict:
             [
                 "step",
                 "depth_A",
+                "command_depth_A",
                 "load_nN",
                 "indenter_force_axis_ev_per_A",
+                "indenter_center_height_A",
+                "contact_center_height_A",
                 "potential_energy_ev",
                 "indenter_energy_ev",
                 "kinetic_energy_ev",
@@ -189,8 +242,9 @@ def run_w_indent(args) -> dict:
         )
 
         for step in range(args.steps):
-            depth = float(args.initial_depth_A) + (step + 1) * float(args.indent_rate_A_ps) * float(args.dt)
-            indenter.set_center(center_at_depth(depth))
+            command_depth = float(args.initial_depth_A) + (step + 1) * indent_rate * float(args.dt)
+            command_depth = min(command_depth, float(args.target_depth_A))
+            indenter.set_center(center_at_depth(command_depth))
             out = model()
 
             with torch.no_grad():
@@ -199,6 +253,8 @@ def run_w_indent(args) -> dict:
                 mol.update_coordinates(mol.coordinates)
                 mol.last_positions = mol.coordinates.detach().clone()
 
+            center_height = float(torch.dot(indenter.center, axis_unit).item())
+            depth = contact_center_height - center_height
             indenter_axis_force = float(torch.dot(indenter.force_on_indenter, axis_unit).item())
             load_nN = max(0.0, indenter_axis_force * _EV_PER_ANG_TO_NN)
             indenter_energy = float(indenter.last_energy.item())
@@ -212,8 +268,11 @@ def run_w_indent(args) -> dict:
                 [
                     step + 1,
                     depth,
+                    command_depth,
                     load_nN,
                     indenter_axis_force,
+                    center_height,
+                    contact_center_height,
                     potential,
                     indenter_energy,
                     kinetic,
@@ -245,9 +304,13 @@ def run_w_indent(args) -> dict:
             "temperature_k": float(args.temperature),
             "indenter_radius_A": float(args.indenter_radius_A),
             "indenter_stiffness_ev_A3": float(args.indenter_stiffness),
-            "indent_rate_A_ps": float(args.indent_rate_A_ps),
+            "initial_depth_A": float(args.initial_depth_A),
+            "target_depth_A": float(args.target_depth_A),
+            "indent_rate_A_ps": float(indent_rate),
+            "equil_steps": int(args.equil_steps),
             "anchor_height_A": float(anchor_height),
             "anchor_lateral_distance_A": float(top_dist[anchor_local].item()),
+            "contact_center_height_A": float(contact_center_height),
             "output_dir": str(output_dir),
             "csv": str(csv_path),
             "plot": str(plot_path),

@@ -248,13 +248,23 @@ python run_scripts/w_indent.py \
   --orientation 100 \
   --replicas 6,6,4 \
   --steps 5000 \
+  --equil-steps 1000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
-  --indent-rate-A-ps 0.05 \
+  --initial-depth-A 0.0 \
+  --target-depth-A 2.0 \
   --gamma 2.0
 ```
 
 输出按取向分目录保存，例如 `run_output/w_indent/orientation_100/`，包含 `load_depth.csv`、`summary.json`、`load_depth.png` 和生成的 slab 结构。
+
+一次跑完三个取向：
+
+```bash
+python run_scripts/w_indent.py --orientation 100 --replicas 6,6,4 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
+python run_scripts/w_indent.py --orientation 110 --replicas 6,6,4 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
+python run_scripts/w_indent.py --orientation 111 --replicas 5,5,3 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
+```
 
 ---
 

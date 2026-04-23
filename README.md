@@ -248,13 +248,23 @@ python run_scripts/w_indent.py \
   --orientation 100 \
   --replicas 6,6,4 \
   --steps 5000 \
+  --equil-steps 1000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
-  --indent-rate-A-ps 0.05 \
+  --initial-depth-A 0.0 \
+  --target-depth-A 2.0 \
   --gamma 2.0
 ```
 
 Outputs are grouped by orientation, e.g. `run_output/w_indent/orientation_100/`, and include `load_depth.csv`, `summary.json`, `load_depth.png`, and the generated slab structure.
+
+Run all three orientations:
+
+```bash
+python run_scripts/w_indent.py --orientation 100 --replicas 6,6,4 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
+python run_scripts/w_indent.py --orientation 110 --replicas 6,6,4 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
+python run_scripts/w_indent.py --orientation 111 --replicas 5,5,3 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
+```
 
 ---
 
