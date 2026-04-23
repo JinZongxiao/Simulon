@@ -82,6 +82,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-6)
     p.add_argument("--barostat-pressure-tolerance-bar", type=float, default=25.0)
     p.add_argument("--max-lateral-box-ratio", type=float, default=2.0)
+    p.add_argument("--max-initial-stress-bar", type=float, default=5000.0)
     p.add_argument("--abort-temperature-k", type=float, default=5000.0)
     p.add_argument("--abort-axial-stress-bar", type=float, default=1.0e7)
     p.add_argument("--print-interval", type=int, default=20)
@@ -249,6 +250,15 @@ def run_w_tensile(args) -> dict:
         (state0["kinetic_tensor"] + state0["virial_tensor"]) / float(mol.box.volume)
     ) * _EV_ANG3_TO_BAR
     baseline_abs = _project_to_lattice_axes(sigma0_tensor_bar, mol.box)
+    if args.max_initial_stress_bar > 0.0:
+        max_initial_abs = float(torch.max(torch.abs(baseline_abs)).item())
+        if max_initial_abs > float(args.max_initial_stress_bar):
+            raise RuntimeError(
+                "initial stress after equilibration is still too large: "
+                f"max|sigma0|={max_initial_abs:.2f} bar "
+                f"exceeds max_initial_stress_bar={args.max_initial_stress_bar}. "
+                "Increase equil_steps or relax the custom structure before tensile loading."
+            )
 
     csv_path = output_dir / "stress_strain.csv"
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
@@ -432,6 +442,7 @@ def run_w_tensile(args) -> dict:
             "barostat_compressibility_bar_inv": float(args.barostat_compressibility_bar_inv),
             "barostat_pressure_tolerance_bar": float(args.barostat_pressure_tolerance_bar),
             "max_lateral_box_ratio": float(args.max_lateral_box_ratio),
+            "max_initial_stress_bar": float(args.max_initial_stress_bar),
             "abort_temperature_k": float(args.abort_temperature_k),
             "abort_axial_stress_bar": float(args.abort_axial_stress_bar),
             "initial_stress_xx_abs_bar": float(baseline_abs[0]),
