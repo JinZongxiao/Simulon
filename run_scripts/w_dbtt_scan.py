@@ -1,0 +1,98 @@
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from postprocess.dbtt import collect_dbtt_rows, plot_dbtt, summarize_dbtt, write_dbtt_csv
+from run_scripts.w_crack import _build_parser as _build_crack_parser
+from run_scripts.w_crack import run_w_crack
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _default_output_dir() -> Path:
+    return _project_root() / "run_output" / "w_dbtt"
+
+
+def _parse_temperatures(value: str) -> list[float]:
+    parts = [x.strip() for x in value.split(",") if x.strip()]
+    temps = [float(x) for x in parts]
+    if not temps:
+        raise ValueError("temperatures cannot be empty")
+    return temps
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Run a W crack-based DBTT temperature scan")
+    p.add_argument("--temperatures", default="100,200,300,400,500,600")
+    p.add_argument("--output-dir", default=str(_default_output_dir()))
+    p.add_argument("--orientation", choices=("100", "110", "111"), default="100")
+    p.add_argument("--smoke", action="store_true")
+    return p
+
+
+def run_w_dbtt_scan(args) -> dict:
+    crack_parser = _build_crack_parser()
+    crack_args = crack_parser.parse_args([])
+    crack_args.output_dir = str(Path(args.output_dir))
+    crack_args.orientation = args.orientation
+    crack_args.smoke = bool(args.smoke)
+    if args.smoke:
+        temperatures = [200.0, 400.0]
+        crack_args.steps = 20
+        crack_args.equil_steps = 5
+        crack_args.target_strain = 0.002
+        crack_args.replicas = "4,4,3"
+    else:
+        temperatures = _parse_temperatures(args.temperatures)
+
+    root_dir = Path(args.output_dir)
+    root_dir.mkdir(parents=True, exist_ok=True)
+    runs = []
+    for temp in temperatures:
+        crack_args.temperature = float(temp)
+        crack_args.output_dir = str(root_dir / f"T_{int(round(temp))}K")
+        print(f"Running DBTT crack case: orientation={args.orientation}, T={temp:.1f} K")
+        summary = run_w_crack(crack_args)
+        runs.append(summary)
+
+    rows = collect_dbtt_rows(root_dir)
+    csv_path = root_dir / "dbtt_summary.csv"
+    json_path = root_dir / "dbtt_summary.json"
+    plot_path = root_dir / "dbtt_summary.png"
+    write_dbtt_csv(rows, csv_path)
+    plot_dbtt(rows, plot_path)
+    summary = summarize_dbtt(rows)
+    summary.update(
+        {
+            "orientation": str(args.orientation),
+            "temperatures_k": temperatures,
+            "csv": str(csv_path),
+            "plot": str(plot_path),
+            "runs": [run["output_dir"] for run in runs],
+            "smoke": bool(args.smoke),
+        }
+    )
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"DBTT summary: {csv_path}")
+    print(f"DBTT plot: {plot_path}")
+    print(f"DBTT json: {json_path}")
+    if args.smoke:
+        print("SMOKE TEST PASS")
+    return summary
+
+
+def main():
+    args = _build_parser().parse_args()
+    run_w_dbtt_scan(args)
+
+
+if __name__ == "__main__":
+    main()

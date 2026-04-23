@@ -20,6 +20,7 @@
 | **W 拉伸** | 新增 `run_scripts/w_tensile.py`：张量应力输出、取向 BCC-W 结构生成、应力应变绘图、横向各向异性 NPT 支持 |
 | **W 纳米压痕** | 新增 `run_scripts/w_indent.py`：球形压头加载、底层固定 W slab、载荷-深度输出和 smoke test |
 | **W 裂纹** | 新增 `run_scripts/w_crack.py`：中心预裂纹生成、刚性 grip 开口位移加载、应力-CMOD 输出和 smoke test |
+| **W DBTT** | 新增 `run_scripts/w_dbtt_scan.py` 和 `postprocess/dbtt.py`：基于裂纹开口的温度扫描与 DBTT 趋势分析 |
 | **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
 
 ---
@@ -69,6 +70,7 @@ postprocess/
   stress_strain.py        # 应力应变摘要 + PNG 绘图
   indentation.py          # 载荷-深度摘要 + PNG 绘图
   crack.py                # 应力-CMOD 摘要 + PNG 绘图
+  dbtt.py                 # 温度扫描聚合 + PNG 绘图
 
 cuda source/
   neighbor_search_kernel.cu
@@ -83,6 +85,7 @@ run_scripts/
   w_tensile.py            # 钨拉伸工作流
   w_indent.py             # 钨纳米压痕工作流
   w_crack.py              # 钨裂纹开口工作流
+  w_dbtt_scan.py          # 钨 DBTT 温度扫描
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
@@ -293,6 +296,28 @@ python run_scripts/w_crack.py \
 ```
 
 输出按取向分目录保存，例如 `run_output/w_crack/orientation_100/`，包含 `crack_response.csv`、`summary.json`、`crack_response.png` 和生成的裂纹结构。
+
+### 9. W DBTT 温度扫描
+
+最小 smoke test：
+
+```bash
+python cuda_test/test_w_dbtt_smoke.py
+```
+
+基于裂纹开口的温度扫描示例：
+
+```bash
+python run_scripts/w_dbtt_scan.py \
+  --orientation 100 \
+  --temperatures 100,200,300,400,500,600
+```
+
+输出写入 `run_output/w_dbtt/`，包含每个温度点的裂纹结果以及：
+
+- `dbtt_summary.csv`
+- `dbtt_summary.json`
+- `dbtt_summary.png`
 
 ---
 

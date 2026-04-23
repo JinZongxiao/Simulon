@@ -20,6 +20,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 | **W tensile** | Added `run_scripts/w_tensile.py` with tensor stress output, oriented BCC-W generation, stress-strain plotting, and anisotropic lateral NPT support |
 | **W indentation** | Added `run_scripts/w_indent.py` with spherical indenter loading, fixed-bottom W slabs, load-depth output, and smoke-test coverage |
 | **W crack** | Added `run_scripts/w_crack.py` with center precrack generation, rigid-grip opening, stress-CMOD output, and smoke-test coverage |
+| **W DBTT** | Added `run_scripts/w_dbtt_scan.py` and `postprocess/dbtt.py` for crack-based temperature scans and DBTT trend plots |
 | **Performance** | ~384 steps/s on RTX 3050 for 100-atom Ar NVT |
 
 ---
@@ -69,6 +70,7 @@ postprocess/
   stress_strain.py        # Stress-strain summary + PNG plot
   indentation.py          # Load-depth summary + PNG plot
   crack.py                # Stress-CMOD summary + PNG plot
+  dbtt.py                 # Temperature-scan aggregation + PNG plot
 
 cuda source/
   neighbor_search_kernel.cu
@@ -83,6 +85,7 @@ run_scripts/
   w_tensile.py            # Tungsten tensile workflow
   w_indent.py             # Tungsten nanoindentation workflow
   w_crack.py              # Tungsten crack-opening workflow
+  w_dbtt_scan.py          # Tungsten DBTT temperature scan
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
@@ -293,6 +296,28 @@ python run_scripts/w_crack.py \
 ```
 
 Outputs are grouped by orientation, e.g. `run_output/w_crack/orientation_100/`, and include `crack_response.csv`, `summary.json`, `crack_response.png`, and the generated cracked structure.
+
+### 9. W DBTT scan
+
+Minimal smoke test:
+
+```bash
+python cuda_test/test_w_dbtt_smoke.py
+```
+
+Example crack-based temperature scan:
+
+```bash
+python run_scripts/w_dbtt_scan.py \
+  --orientation 100 \
+  --temperatures 100,200,300,400,500,600
+```
+
+Outputs are written to `run_output/w_dbtt/` and include per-temperature crack runs plus:
+
+- `dbtt_summary.csv`
+- `dbtt_summary.json`
+- `dbtt_summary.png`
 
 ---
 
