@@ -182,12 +182,15 @@ class EAMForceCUDA(nn.Module):
     def forward(self):
         coords = self.molecular.coordinates
         edge_index = self.molecular.graph_data.edge_index
-        box_length = self.molecular.box_length
         num_atoms = coords.shape[0]
         
         row, col = edge_index
         dist_vec = coords[row] - coords[col]
-        dist_vec -= torch.round(dist_vec / box_length) * box_length
+        if hasattr(self.molecular, "box"):
+            dist_vec = self.molecular.box.minimum_image(dist_vec)
+        else:
+            box_length = self.molecular.box_length
+            dist_vec -= torch.round(dist_vec / box_length) * box_length
         distances = torch.norm(dist_vec, dim=1)
         
         in_cutoff = distances < self.cutoff

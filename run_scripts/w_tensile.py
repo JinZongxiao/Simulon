@@ -82,6 +82,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-6)
     p.add_argument("--barostat-pressure-tolerance-bar", type=float, default=25.0)
     p.add_argument("--max-lateral-box-ratio", type=float, default=2.0)
+    p.add_argument("--abort-temperature-k", type=float, default=5000.0)
+    p.add_argument("--abort-axial-stress-bar", type=float, default=1.0e7)
     p.add_argument("--print-interval", type=int, default=20)
     p.add_argument("--traj-interval", type=int, default=0)
     p.add_argument("--smoke", action="store_true")
@@ -351,6 +353,16 @@ def run_w_tensile(args) -> dict:
                         f"ratios={lateral_ratios.detach().cpu().tolist()} "
                         f"exceed max_lateral_box_ratio={args.max_lateral_box_ratio}"
                     )
+            if args.abort_temperature_k > 0.0 and temp > float(args.abort_temperature_k):
+                raise RuntimeError(
+                    f"temperature runaway detected: T={temp:.2f} K exceeds abort_temperature_k={args.abort_temperature_k}"
+                )
+            if args.abort_axial_stress_bar > 0.0 and abs(float(tension_axis_bar[axis_idx])) > float(args.abort_axial_stress_bar):
+                raise RuntimeError(
+                    "axial stress runaway detected: "
+                    f"|sigma_tension|={abs(float(tension_axis_bar[axis_idx])):.2f} bar "
+                    f"exceeds abort_axial_stress_bar={args.abort_axial_stress_bar}"
+                )
 
             writer.writerow(
                 [
@@ -420,6 +432,8 @@ def run_w_tensile(args) -> dict:
             "barostat_compressibility_bar_inv": float(args.barostat_compressibility_bar_inv),
             "barostat_pressure_tolerance_bar": float(args.barostat_pressure_tolerance_bar),
             "max_lateral_box_ratio": float(args.max_lateral_box_ratio),
+            "abort_temperature_k": float(args.abort_temperature_k),
+            "abort_axial_stress_bar": float(args.abort_axial_stress_bar),
             "initial_stress_xx_abs_bar": float(baseline_abs[0]),
             "initial_stress_yy_abs_bar": float(baseline_abs[1]),
             "initial_stress_zz_abs_bar": float(baseline_abs[2]),

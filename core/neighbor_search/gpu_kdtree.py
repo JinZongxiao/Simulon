@@ -59,11 +59,22 @@ def find_neighbors_gpu_pbc(positions, cutoff, box, batch_size=2000):
     """
     device = positions.device
 
-    # CUDA kernel 路径：仅支持正交盒子（scalar box_length）
+    # CUDA kernel 路径：仅支持真正立方盒子（single scalar box_length）。
+    # 对于正交但各向异性的盒子，必须退回 Python/Torch 路径，否则会把
+    # Lx 错当成 Ly/Lz，导致 PBC 与邻居表错误。
     _is_box_obj = hasattr(box, 'minimum_image')
-    _orthogonal  = (not _is_box_obj) or box.is_orthogonal
+    _cubic = True
+    if _is_box_obj:
+        _orthogonal = box.is_orthogonal
+        if _orthogonal:
+            diag = box.diag
+            _cubic = bool(torch.allclose(diag, diag[0].expand_as(diag), rtol=1e-6, atol=1e-8))
+        else:
+            _cubic = False
+    else:
+        _orthogonal = True
 
-    if CUDA_AVAILABLE and device.type == 'cuda' and _orthogonal:
+    if CUDA_AVAILABLE and device.type == 'cuda' and _orthogonal and _cubic:
         bl = float(box.diag[0]) if _is_box_obj else float(box)
         try:
             edge_index, edge_attr = simulon_cuda.neighbor_search_cuda(
@@ -101,7 +112,8 @@ def find_neighbors_gpu_pbc_pytorch(positions, cutoff, box, batch_size=None):
     if batch_size is None:
         if device.type == 'cuda':
             target_bytes = 512 * 1024 * 1024
-            batch_size = max(64, target_bytes // (n * 3 * 4))
+            bytes_per_scalar = max(positions.element_size(), 4)
+            batch_size = max(64, target_bytes // (n * 3 * bytes_per_scalar))
             batch_size = min(batch_size, n)
         else:
             batch_size = min(2000, n)
