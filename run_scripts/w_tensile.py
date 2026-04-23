@@ -29,6 +29,12 @@ def _kinetic_stress_tensor(model) -> torch.Tensor:
     return torch.einsum("ni,nj->ij", masses * vel, vel)
 
 
+def _project_to_lattice_axes(tensor: torch.Tensor, box) -> torch.Tensor:
+    axes = box.H.to(device=tensor.device, dtype=tensor.dtype)
+    axes = axes / torch.linalg.norm(axes, dim=1, keepdim=True).clamp_min(1e-12)
+    return torch.einsum("ai,ij,aj->a", axes, tensor, axes)
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -92,7 +98,11 @@ def _parse_replicas(value: str | None, orientation: str) -> tuple[int, int, int]
 
 def run_w_tensile(args) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    output_dir = Path(args.output_dir)
+    base_output_dir = Path(args.output_dir)
+    if args.orientation == "custom":
+        output_dir = base_output_dir / "orientation_custom"
+    else:
+        output_dir = base_output_dir / f"orientation_{args.orientation}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.smoke:
@@ -200,9 +210,10 @@ def run_w_tensile(args) -> dict:
             kinetic_tensor = _kinetic_stress_tensor(model)
             virial_tensor = out["virial_tensor"].to(kinetic_tensor.dtype)
             sigma_tensor_bar = ((kinetic_tensor + virial_tensor) / volume) * _EV_ANG3_TO_BAR
-            stress_xx_bar = float(sigma_tensor_bar[0, 0])
-            stress_yy_bar = float(sigma_tensor_bar[1, 1])
-            stress_zz_bar = float(sigma_tensor_bar[2, 2])
+            stress_axis_bar = _project_to_lattice_axes(sigma_tensor_bar, mol.box)
+            stress_xx_bar = float(stress_axis_bar[0])
+            stress_yy_bar = float(stress_axis_bar[1])
+            stress_zz_bar = float(stress_axis_bar[2])
             pot = float(out["energy"])
             kin = float(out["kinetic_energy"])
             temp = float(out["temperature"])

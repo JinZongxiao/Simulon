@@ -125,9 +125,9 @@ class Box:
         else:
             H_inv = self._H_inv.to(rij)             # [3, 3]
             H     = self._H.to(rij)
-            s = rij @ H_inv.T                       # 分数坐标
+            s = rij @ H_inv                         # 分数坐标（row-vector convention）
             s = s - torch.round(s)
-            return s @ H.T                          # 回到笛卡尔
+            return s @ H                            # 回到笛卡尔
 
     def wrap_positions(self, pos: torch.Tensor) -> torch.Tensor:
         """将坐标折回主盒子 [0, L)。"""
@@ -137,9 +137,9 @@ class Box:
         else:
             H_inv = self._H_inv.to(pos)
             H     = self._H.to(pos)
-            s = pos @ H_inv.T
+            s = pos @ H_inv
             s = s - torch.floor(s)
-            return s @ H.T
+            return s @ H
 
     # ─── NPT 缩放 ────────────────────────────────────────────────────────────
     def scale(self, factor: float):

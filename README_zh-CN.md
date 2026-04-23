@@ -77,6 +77,7 @@ run_scripts/
   user_defined_run.py
   mlps_run.py
   w_tensile.py            # 钨拉伸工作流
+  check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
 run_data/                 # 示例结构（Ar、Cu、W 等）
@@ -199,7 +200,27 @@ python run_scripts/w_tensile.py \
   --gamma 2.0
 ```
 
-输出文件包括：
+一次跑完三个常用 W 拉伸取向，且结果不会互相覆盖：
+
+```bash
+python run_scripts/w_tensile.py --orientation 100 --replicas 4,4,3 --lateral-mode stress-free --steps 5000 --strain-rate 0.00005 --barostat-tau 0.1 --barostat-gamma 1.0 --gamma 2.0 --output-dir run_output/w_tensile
+python run_scripts/w_tensile.py --orientation 110 --replicas 4,4,3 --lateral-mode stress-free --steps 5000 --strain-rate 0.00005 --barostat-tau 0.1 --barostat-gamma 1.0 --gamma 2.0 --output-dir run_output/w_tensile
+python run_scripts/w_tensile.py --orientation 111 --replicas 3,3,2 --lateral-mode stress-free --steps 5000 --strain-rate 0.00005 --barostat-tau 0.1 --barostat-gamma 1.0 --gamma 2.0 --output-dir run_output/w_tensile
+```
+
+取向结构静态检查：
+
+```bash
+python run_scripts/check_w_orientation.py --orientation all
+```
+
+输出会按取向分目录保存：
+
+- `run_output/w_tensile/orientation_100/`
+- `run_output/w_tensile/orientation_110/`
+- `run_output/w_tensile/orientation_111/`
+
+每个拉伸输出目录包括：
 
 - `stress_strain.csv`
 - `summary.json`

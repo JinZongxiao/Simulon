@@ -139,7 +139,11 @@ class AnisotropicNPTBarostat:
         p_int_ev_ang3 = (kinetic_tensor.to(torch.float64) + virial_tensor.to(torch.float64)) / volume
         p_ext_ev_ang3 = self.target_pressure_bar * _BAR_TO_EV_ANG3
 
-        delta_p = torch.diag(p_int_ev_ang3) - p_ext_ev_ang3
+        axes = mol.box.H.to(torch.float64)
+        axes = axes / torch.linalg.norm(axes, dim=1, keepdim=True).clamp_min(1e-12)
+        p_axis_ev_ang3 = torch.einsum("ai,ij,aj->a", axes, p_int_ev_ang3, axes)
+
+        delta_p = p_axis_ev_ang3 - p_ext_ev_ang3
         force_eta = volume * delta_p
         accel = force_eta / self.W
 
@@ -159,7 +163,7 @@ class AnisotropicNPTBarostat:
         scale = torch.where(self.control_axes, scale, torch.ones_like(scale))
         mu = torch.diag(scale)
 
-        frac = mol.coordinates @ mol.box.H_inv.to(mol.coordinates).T
+        frac = mol.coordinates @ mol.box.H_inv.to(mol.coordinates)
         old_H = mol.box.H.detach().clone()
         mol.box.H = mu.to(old_H.dtype) @ old_H
         new_coords = frac @ mol.box.H.to(frac.dtype)
@@ -182,4 +186,4 @@ class AnisotropicNPTBarostat:
                 mol.box_length = float(new_lengths[0].item())
 
         mol.last_positions = mol.coordinates.clone()
-        return (p_int_ev_ang3 * _EV_ANG3_TO_BAR).to(mol.coordinates.dtype)
+        return (p_axis_ev_ang3 * _EV_ANG3_TO_BAR).to(mol.coordinates.dtype)

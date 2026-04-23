@@ -48,7 +48,7 @@ class UniaxialTensileLoader:
                 scale_vec[ax] = lat_scale
 
         old_H = self.molecular.box.H.detach().clone()
-        frac = self.molecular.coordinates @ self.molecular.box.H_inv.to(self.molecular.coordinates).T
+        frac = self.molecular.coordinates @ self.molecular.box.H_inv.to(self.molecular.coordinates)
         new_H = torch.diag(scale_vec).to(old_H.dtype) @ old_H
 
         self.molecular.box.H = new_H

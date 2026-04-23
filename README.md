@@ -77,6 +77,7 @@ run_scripts/
   user_defined_run.py
   mlps_run.py
   w_tensile.py            # Tungsten tensile workflow
+  check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
 run_data/                 # Example structures (Ar, Cu, W, …)
@@ -199,7 +200,27 @@ python run_scripts/w_tensile.py \
   --gamma 2.0
 ```
 
-Outputs:
+Run all three common W tensile orientations without overwriting results:
+
+```bash
+python run_scripts/w_tensile.py --orientation 100 --replicas 4,4,3 --lateral-mode stress-free --steps 5000 --strain-rate 0.00005 --barostat-tau 0.1 --barostat-gamma 1.0 --gamma 2.0 --output-dir run_output/w_tensile
+python run_scripts/w_tensile.py --orientation 110 --replicas 4,4,3 --lateral-mode stress-free --steps 5000 --strain-rate 0.00005 --barostat-tau 0.1 --barostat-gamma 1.0 --gamma 2.0 --output-dir run_output/w_tensile
+python run_scripts/w_tensile.py --orientation 111 --replicas 3,3,2 --lateral-mode stress-free --steps 5000 --strain-rate 0.00005 --barostat-tau 0.1 --barostat-gamma 1.0 --gamma 2.0 --output-dir run_output/w_tensile
+```
+
+Static orientation sanity check:
+
+```bash
+python run_scripts/check_w_orientation.py --orientation all
+```
+
+Outputs are grouped by orientation:
+
+- `run_output/w_tensile/orientation_100/`
+- `run_output/w_tensile/orientation_110/`
+- `run_output/w_tensile/orientation_111/`
+
+Each tensile output directory contains:
 
 - `stress_strain.csv`
 - `summary.json`

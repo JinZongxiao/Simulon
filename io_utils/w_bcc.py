@@ -23,7 +23,7 @@ def _unit_basis_positions(lattice_param: float, orientation: str) -> tuple[torch
     a = float(lattice_param)
     H_conv = torch.eye(3, dtype=torch.float64) * a
     H_unit = _orientation_matrix(orientation) @ H_conv
-    H_inv_t = torch.linalg.inv(H_unit).T
+    H_inv = torch.linalg.inv(H_unit)
 
     basis_frac_conv = torch.tensor(
         [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]],
@@ -37,7 +37,8 @@ def _unit_basis_positions(lattice_param: float, orientation: str) -> tuple[torch
         shift = torch.tensor(n, dtype=torch.float64)
         for basis in basis_frac_conv:
             r_cart = (shift + basis) @ H_conv
-            frac_new = r_cart @ H_inv_t
+            # Row-vector convention: cartesian = fractional @ H.
+            frac_new = r_cart @ H_inv
             if torch.all(frac_new >= -1e-8) and torch.all(frac_new < 1.0 - 1e-8):
                 key = tuple(round(float(x), 8) for x in frac_new.tolist())
                 if key not in seen:
