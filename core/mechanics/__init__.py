@@ -1,3 +1,4 @@
 from .loading import UniaxialTensileLoader
+from .indenter import SphericalIndenterForce
 
-__all__ = ["UniaxialTensileLoader"]
+__all__ = ["SphericalIndenterForce", "UniaxialTensileLoader"]

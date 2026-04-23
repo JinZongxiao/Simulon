@@ -18,6 +18,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 | **BMH** | Fully rewritten: edge-based analytical forces, eliminates O(N²) memory allocation |
 | **EAM** | Dead-code removal; vectorized table lookup (no Python loops); virial added |
 | **W tensile** | Added `run_scripts/w_tensile.py` with tensor stress output, oriented BCC-W generation, stress-strain plotting, and anisotropic lateral NPT support |
+| **W indentation** | Added `run_scripts/w_indent.py` with spherical indenter loading, fixed-bottom W slabs, load-depth output, and smoke-test coverage |
 | **Performance** | ~384 steps/s on RTX 3050 for 100-atom Ar NVT |
 
 ---
@@ -30,7 +31,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 - **Triclinic PBC**: unified `Box` class handles cubic, orthorhombic, and fully triclinic cells via a 3×3 lattice matrix.
 - **Verlet neighbor list**: lazy rebuild triggered by displacement threshold (skin/2); GPU-accelerated via optional CUDA extension.
 - **Modular force fields**: Lennard-Jones, EAM, Born–Mayer–Huggins, and a user-defined pair-potential template.
-- **W mechanical workflow**: built-in tungsten tensile script with `[100]/[110]/[111]` oriented cell generation, stress-strain CSV/PNG output, and smoke-test coverage.
+- **W mechanical workflows**: built-in tungsten tensile and nanoindentation scripts with `[100]/[110]/[111]` oriented cell generation, CSV/PNG output, and smoke-test coverage.
 - **Restart**: full checkpoint/resume support — save every N steps, resume without re-equilibrating.
 - **RDF analyzer**: online accumulation with correct normalization for same-species and cross-species pairs.
 - **I/O & utilities**: XYZ reader/writer, CSV energy logger, trajectory dump, EAM table parser, pymatgen/ASE integration.
@@ -65,6 +66,7 @@ io_utils/
 
 postprocess/
   stress_strain.py        # Stress-strain summary + PNG plot
+  indentation.py          # Load-depth summary + PNG plot
 
 cuda source/
   neighbor_search_kernel.cu
@@ -77,6 +79,7 @@ run_scripts/
   user_defined_run.py
   mlps_run.py
   w_tensile.py            # Tungsten tensile workflow
+  w_indent.py             # Tungsten nanoindentation workflow
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
@@ -228,6 +231,30 @@ Each tensile output directory contains:
 - generated oriented structure, e.g. `W_100_generated.xyz`
 
 The CSV includes `stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`, box lengths, energy, temperature, and virial tensor diagonals.
+
+### 7. W nanoindentation workflow
+
+Minimal smoke test:
+
+```bash
+python run_scripts/w_indent.py --smoke
+python cuda_test/test_w_indent_smoke.py
+```
+
+Example W `[100]` spherical-indenter run:
+
+```bash
+python run_scripts/w_indent.py \
+  --orientation 100 \
+  --replicas 6,6,4 \
+  --steps 5000 \
+  --indenter-radius-A 8.0 \
+  --indenter-stiffness 5.0 \
+  --indent-rate-A-ps 0.05 \
+  --gamma 2.0
+```
+
+Outputs are grouped by orientation, e.g. `run_output/w_indent/orientation_100/`, and include `load_depth.csv`, `summary.json`, `load_depth.png`, and the generated slab structure.
 
 ---
 
