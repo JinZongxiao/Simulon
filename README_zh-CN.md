@@ -17,6 +17,7 @@
 | **邻居搜索** | 修复重复边 Bug；Box-aware 最小镜像；CUDA 内核前缀和 O(N²)→O(1) |
 | **BMH** | 全面重写：边列化解析力，消除 O(N²) 内存分配 |
 | **EAM** | 删除死代码；向量化查表（无 Python 循环）；加入 virial |
+| **W 拉伸** | 新增 `run_scripts/w_tensile.py`：张量应力输出、取向 BCC-W 结构生成、应力应变绘图、横向各向异性 NPT 支持 |
 | **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
 
 ---
@@ -25,9 +26,11 @@
 
 - **PyTorch 优先**：所有状态均存放在张量中，一行代码切换 CPU/GPU。
 - **三种系综**：NVE、NVT（Langevin 热浴）、NPT（Berendsen 压浴 + Langevin）。
+- **张量应力输出**：力场现在返回标量 `virial` 和 `virial_tensor`，拉伸流程使用完整应力张量。
 - **三斜 PBC**：统一 `Box` 类，通过 3×3 格矢矩阵处理立方、正交、任意三斜盒子。
 - **Verlet 邻居表**：基于位移阈值（skin/2）的惰性重建；可选 CUDA 扩展加速。
 - **模块化力场**：Lennard-Jones、EAM、Born–Mayer–Huggins，以及用户自定义对势模板。
+- **W 力学流程**：内置钨拉伸脚本，支持 `[100]/[110]/[111]` 取向结构生成、CSV/PNG 输出和 smoke test。
 - **Restart**：完整断点续跑支持，每 N 步保存一次，重启无需重新平衡。
 - **RDF 分析器**：在线累积，同类/异类原子对均有正确归一化。
 - **I/O 与工具**：XYZ 读写、CSV 能量日志、轨迹输出、EAM 表格解析、pymatgen/ASE 集成。
@@ -40,7 +43,8 @@
 ```
 core/
   box.py                  # 统一正交+三斜 PBC（H 矩阵）
-  barostat.py             # Berendsen 各向同性 NPT 压浴
+  barostat.py             # 各向同性 Berendsen + 对角各向异性 NPT 压浴
+  mechanics/loading.py    # 单轴拉伸加载器
   md_model.py             # SumBackboneInterface、BaseModel（主 MD 循环）
   md_simulation.py        # MDSimulator：运行循环、日志、轨迹输出
   analyser.py             # RDF 累积器
@@ -55,8 +59,12 @@ core/
 
 io_utils/
   reader.py               # AtomFileReader：XYZ → 张量 + 邻居表
+  w_bcc.py                # 取向 BCC-W 结构生成
   restart.py              # save_checkpoint / load_checkpoint
   writer.py / output_logger.py / eam_parser.py / ...
+
+postprocess/
+  stress_strain.py        # 应力应变摘要 + PNG 绘图
 
 cuda source/
   neighbor_search_kernel.cu
@@ -68,6 +76,7 @@ run_scripts/
   lj_run.py               # JSON 驱动的 LJ 模拟
   user_defined_run.py
   mlps_run.py
+  w_tensile.py            # 钨拉伸工作流
   plot_md_diagnostics.py
 
 run_data/                 # 示例结构（Ar、Cu、W 等）
@@ -167,6 +176,38 @@ for step in range(next_step, total_steps):
     model()
 ```
 
+### 6. W 拉伸工作流
+
+最小 smoke test：
+
+```bash
+python run_scripts/w_tensile.py --smoke
+python cuda_test/test_w_tensile_smoke.py
+```
+
+推荐的 W `[100]` 拉伸基线参数（横向各向异性 NPT）：
+
+```bash
+python run_scripts/w_tensile.py \
+  --orientation 100 \
+  --replicas 4,4,3 \
+  --lateral-mode stress-free \
+  --steps 5000 \
+  --strain-rate 0.00005 \
+  --barostat-tau 0.1 \
+  --barostat-gamma 1.0 \
+  --gamma 2.0
+```
+
+输出文件包括：
+
+- `stress_strain.csv`
+- `summary.json`
+- `stress_strain.png`
+- 自动生成的取向结构，如 `W_100_generated.xyz`
+
+CSV 中包含 `stress_xx_bar`、`stress_yy_bar`、`stress_zz_bar`、盒长、能量、温度和维里张量对角元。
+
 ---
 
 ## 系综对照表
@@ -175,7 +216,7 @@ for step in range(next_step, total_steps):
 |------|------------------------|---------|
 | NVE | `ensemble='NVE'` | — |
 | NVT | `ensemble='NVT', temperature=(T_init, T_target), gamma=γ` | Langevin |
-| NPT | `ensemble='NPT', temperature=(T_init, T_target), gamma=γ` | + `BerendsenBarostat` 传入 `BaseModel` |
+| NPT | `ensemble='NPT', temperature=(T_init, T_target), gamma=γ` | + `BerendsenBarostat` 或 `AnisotropicNPTBarostat` 传入 `BaseModel` |
 
 ---
 

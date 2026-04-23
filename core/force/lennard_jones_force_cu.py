@@ -32,7 +32,8 @@ class LennardJonesForce(BackboneInterface, nn.Module):
             zero_energy = torch.zeros((), device=pos.device, dtype=pos.dtype)
             zero_forces = torch.zeros_like(pos)
             zero_virial = torch.zeros((), device=pos.device, dtype=pos.dtype)
-            return {'energy': zero_energy, 'forces': zero_forces, 'virial': zero_virial}
+            zero_virial_tensor = torch.zeros((3, 3), device=pos.device, dtype=pos.dtype)
+            return {'energy': zero_energy, 'forces': zero_forces, 'virial': zero_virial, 'virial_tensor': zero_virial_tensor}
         rc_t = getattr(self.molecular, 'cutoff', None)
         rc = float(rc_t.item()) if torch.is_tensor(rc_t) else float(rc_t)
         is_switch = getattr(self.molecular, 'is_switch', False)
@@ -112,4 +113,6 @@ class LennardJonesForce(BackboneInterface, nn.Module):
             fmag = fmag_raw
 
         virial = (fmag * r * (r < rc).to(dtype0)).sum()
-        return {'energy': total_energy, 'forces': self.pair_force, 'virial': virial}
+        fij = fmag.unsqueeze(1) * (rij / r.unsqueeze(1))
+        virial_tensor = torch.einsum('ei,ej->ij', fij, rij)
+        return {'energy': total_energy, 'forces': self.pair_force, 'virial': virial, 'virial_tensor': virial_tensor}

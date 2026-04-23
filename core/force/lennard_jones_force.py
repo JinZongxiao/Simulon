@@ -91,4 +91,5 @@ class LennardJonesForce(BackboneInterface, nn.Module):
 
         total_energy = U_eff.sum()
         virial = (Fmag * r * mask).sum()   # Σ_edges Fmag·r，用于 NPT 压力
-        return {'energy': total_energy, 'forces': self._forces_buf, 'virial': virial}
+        virial_tensor = torch.einsum('ei,ej->ij', fij, rij)
+        return {'energy': total_energy, 'forces': self._forces_buf, 'virial': virial, 'virial_tensor': virial_tensor}

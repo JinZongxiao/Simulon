@@ -456,7 +456,8 @@ class EAMForceCUDAExt(nn.Module):
         edge_index = self.molecular.graph_data.edge_index
         if edge_index.numel() == 0:
             zero = torch.zeros((), device=self.device, dtype=coords.dtype)
-            return {'energy': zero, 'forces': torch.zeros_like(coords), 'virial': zero}
+            zero_tensor = torch.zeros((3, 3), device=self.device, dtype=coords.dtype)
+            return {'energy': zero, 'forces': torch.zeros_like(coords), 'virial': zero, 'virial_tensor': zero_tensor}
         row, col = edge_index
         if getattr(self.molecular.graph_data, 'edge_attr', None) is not None:
             distances_all = self.molecular.graph_data.edge_attr
@@ -471,7 +472,8 @@ class EAMForceCUDAExt(nn.Module):
         mask = distances_all < self.cutoff
         if not mask.any():
             zero = torch.zeros((), device=self.device, dtype=coords.dtype)
-            return {'energy': zero, 'forces': torch.zeros_like(coords), 'virial': zero}
+            zero_tensor = torch.zeros((3, 3), device=self.device, dtype=coords.dtype)
+            return {'energy': zero, 'forces': torch.zeros_like(coords), 'virial': zero, 'virial_tensor': zero_tensor}
         distances = distances_all[mask].contiguous().to(torch.float32)
         row_m = row[mask].contiguous()
         col_m = col[mask].contiguous()
@@ -557,10 +559,13 @@ class EAMForceCUDAExt(nn.Module):
             forces.scatter_add_(0, row_m.unsqueeze(1).expand_as(force_vec), force_vec)
             forces.scatter_add_(0, col_m.unsqueeze(1).expand_as(force_vec), -force_vec)
         virial = (force_scalar * distances).sum().to(coords.dtype)
+        force_vec_tensor = -force_scalar.unsqueeze(1) * (rij_vec / (distances.unsqueeze(1) + 1e-8))
+        virial_tensor = torch.einsum('ei,ej->ij', force_vec_tensor, rij_vec.to(force_vec_tensor.dtype)).to(coords.dtype)
         return {
             'energy': total_embedding_energy + total_pair_energy,
             'forces': forces,
             'virial': virial,
+            'virial_tensor': virial_tensor,
             'embedding_energy': total_embedding_energy,
             'pair_potential': total_pair_energy,
         }

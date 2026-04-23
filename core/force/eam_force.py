@@ -281,10 +281,12 @@ class EAMForce(nn.Module):
 
         in_cutoff = distances_all < self.cutoff
         if not in_cutoff.any():
+            zero_tensor = torch.zeros((3, 3), device=self.device, dtype=coords.dtype)
             return {
                 'energy': torch.tensor(0.0, device=self.device),
                 'forces': torch.zeros_like(coords),
                 'virial': torch.tensor(0.0, device=self.device),
+                'virial_tensor': zero_tensor,
             }
 
         distances = distances_all[in_cutoff]
@@ -384,5 +386,6 @@ class EAMForce(nn.Module):
 
         # 维里（W = Σ_{i<j} force_scalar · r_ij，half-list 每对一次）
         virial = (force_scalar * distances).sum()
+        virial_tensor = torch.einsum('ei,ej->ij', force_vec, rij_vec)
 
-        return {'energy': total_energy, 'forces': forces, 'virial': virial}
+        return {'energy': total_energy, 'forces': forces, 'virial': virial, 'virial_tensor': virial_tensor}

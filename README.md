@@ -17,6 +17,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 | **Neighbor search** | Fixed duplicate-edge bug; Box-aware minimum image; CUDA kernel O(N²)→O(1) prefix-sum fix |
 | **BMH** | Fully rewritten: edge-based analytical forces, eliminates O(N²) memory allocation |
 | **EAM** | Dead-code removal; vectorized table lookup (no Python loops); virial added |
+| **W tensile** | Added `run_scripts/w_tensile.py` with tensor stress output, oriented BCC-W generation, stress-strain plotting, and anisotropic lateral NPT support |
 | **Performance** | ~384 steps/s on RTX 3050 for 100-atom Ar NVT |
 
 ---
@@ -25,9 +26,11 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 
 - **PyTorch-first**: all state lives in tensors; CPU/GPU switching is a single flag.
 - **Three ensembles**: NVE, NVT (Langevin thermostat), NPT (Berendsen barostat + Langevin).
+- **Tensor stress support**: force fields now return scalar virial and virial tensor; tensile workflows use full stress tensors.
 - **Triclinic PBC**: unified `Box` class handles cubic, orthorhombic, and fully triclinic cells via a 3×3 lattice matrix.
 - **Verlet neighbor list**: lazy rebuild triggered by displacement threshold (skin/2); GPU-accelerated via optional CUDA extension.
 - **Modular force fields**: Lennard-Jones, EAM, Born–Mayer–Huggins, and a user-defined pair-potential template.
+- **W mechanical workflow**: built-in tungsten tensile script with `[100]/[110]/[111]` oriented cell generation, stress-strain CSV/PNG output, and smoke-test coverage.
 - **Restart**: full checkpoint/resume support — save every N steps, resume without re-equilibrating.
 - **RDF analyzer**: online accumulation with correct normalization for same-species and cross-species pairs.
 - **I/O & utilities**: XYZ reader/writer, CSV energy logger, trajectory dump, EAM table parser, pymatgen/ASE integration.
@@ -40,7 +43,8 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 ```
 core/
   box.py                  # Unified orthogonal + triclinic PBC (H-matrix)
-  barostat.py             # Berendsen isotropic NPT barostat
+  barostat.py             # Isotropic Berendsen + diagonal anisotropic NPT barostats
+  mechanics/loading.py    # Uniaxial tensile loader
   md_model.py             # SumBackboneInterface, BaseModel (main MD loop)
   md_simulation.py        # MDSimulator: run loop, logging, trajectory dump
   analyser.py             # RDF accumulator
@@ -55,8 +59,12 @@ core/
 
 io_utils/
   reader.py               # AtomFileReader: XYZ → tensors + neighbor list
+  w_bcc.py                # Oriented BCC-W structure generator
   restart.py              # save_checkpoint / load_checkpoint
   writer.py / output_logger.py / eam_parser.py / ...
+
+postprocess/
+  stress_strain.py        # Stress-strain summary + PNG plot
 
 cuda source/
   neighbor_search_kernel.cu
@@ -68,6 +76,7 @@ run_scripts/
   lj_run.py               # JSON-driven LJ simulation
   user_defined_run.py
   mlps_run.py
+  w_tensile.py            # Tungsten tensile workflow
   plot_md_diagnostics.py
 
 run_data/                 # Example structures (Ar, Cu, W, …)
@@ -167,6 +176,38 @@ for step in range(next_step, total_steps):
     model()
 ```
 
+### 6. W tensile workflow
+
+Minimal smoke test:
+
+```bash
+python run_scripts/w_tensile.py --smoke
+python cuda_test/test_w_tensile_smoke.py
+```
+
+Recommended baseline for W `[100]` tensile with anisotropic lateral NPT:
+
+```bash
+python run_scripts/w_tensile.py \
+  --orientation 100 \
+  --replicas 4,4,3 \
+  --lateral-mode stress-free \
+  --steps 5000 \
+  --strain-rate 0.00005 \
+  --barostat-tau 0.1 \
+  --barostat-gamma 1.0 \
+  --gamma 2.0
+```
+
+Outputs:
+
+- `stress_strain.csv`
+- `summary.json`
+- `stress_strain.png`
+- generated oriented structure, e.g. `W_100_generated.xyz`
+
+The CSV includes `stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`, box lengths, energy, temperature, and virial tensor diagonals.
+
 ---
 
 ## Ensemble reference
@@ -175,7 +216,7 @@ for step in range(next_step, total_steps):
 |----------|--------------------------|-------|
 | NVE | `ensemble='NVE'` | — |
 | NVT | `ensemble='NVT', temperature=(T_init, T_target), gamma=γ` | Langevin |
-| NPT | `ensemble='NPT', temperature=(T_init, T_target), gamma=γ` | + `BerendsenBarostat` passed to `BaseModel` |
+| NPT | `ensemble='NPT', temperature=(T_init, T_target), gamma=γ` | + `BerendsenBarostat` or `AnisotropicNPTBarostat` passed to `BaseModel` |
 
 ---
 

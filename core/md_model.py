@@ -28,19 +28,28 @@ class SumBackboneInterface(nn.Module):
         self._buf_forces = torch.zeros(self.atom_num, 3, device=self.device)
         self._buf_energy = torch.tensor(0.0, device=self.device)
         self._buf_virial = torch.tensor(0.0, device=self.device)
+        self._buf_virial_tensor = torch.zeros(3, 3, device=self.device)
 
     def forward(self):
         # zero_ 原地清零，复用已分配内存（避免每步 torch.zeros(N,3) 分配）
         self._buf_forces.zero_()
         self._buf_energy.zero_()
         self._buf_virial.zero_()
+        self._buf_virial_tensor.zero_()
         for backbone in self.backbones:
             output = backbone()
             self._buf_forces.add_(output['forces'])
             self._buf_energy.add_(output['energy'])
             if 'virial' in output:
                 self._buf_virial.add_(output['virial'])
-        return {'forces': self._buf_forces, 'energy': self._buf_energy, 'virial': self._buf_virial}
+            if 'virial_tensor' in output:
+                self._buf_virial_tensor.add_(output['virial_tensor'])
+        return {
+            'forces': self._buf_forces,
+            'energy': self._buf_energy,
+            'virial': self._buf_virial,
+            'virial_tensor': self._buf_virial_tensor,
+        }
 
 
 class BaseModel(nn.Module):
@@ -54,6 +63,7 @@ class BaseModel(nn.Module):
         self.force_cache = torch.empty_like(molecular.coordinates, device=main_device)
         self.energy_cache = torch.empty(1, device=main_device)
         self.virial_cache = torch.tensor(0.0, device=main_device)
+        self.virial_tensor_cache = torch.zeros(3, 3, device=main_device)
         self._first_call = True
         self.profile = {
             'pair_time': 0.0,
@@ -69,6 +79,11 @@ class BaseModel(nn.Module):
             self._evt_second_end = torch.cuda.Event(enable_timing=True)
         else:
             self._evt_first_start = None
+
+    def _kinetic_tensor(self) -> torch.Tensor:
+        vel = self.molecular.atom_velocities
+        masses = self.Integrator.atom_mass[:, :1]
+        return torch.einsum("ni,nj->ij", masses * vel, vel)
 
     def forward(self):
         if torch.cuda.is_available():
@@ -106,6 +121,7 @@ class BaseModel(nn.Module):
         self.force_cache = out['forces']
         self.energy_cache = out['energy']
         self.virial_cache = out.get('virial', torch.tensor(0.0, device=main_device))
+        self.virial_tensor_cache = out.get('virial_tensor', torch.zeros(3, 3, device=main_device))
         if torch.cuda.is_available():
             self.Integrator.second_half(self.force_cache)
             self._evt_second_end.record()
@@ -127,16 +143,20 @@ class BaseModel(nn.Module):
         # NPT：压力控制（在 second_half 之后缩放盒子与坐标）
         pressure = None
         if self.barostat is not None:
+            kinetic_tensor = self._kinetic_tensor()
             pressure = self.barostat.step(
                 self.Integrator.dt,
                 integ_out['kinetic_energy'],
                 self.virial_cache,
+                kinetic_tensor=kinetic_tensor,
+                virial_tensor=self.virial_tensor_cache,
             )
 
         result = {
             'forces': self.force_cache,
             'energy': self.energy_cache,
             'virial': self.virial_cache,
+            'virial_tensor': self.virial_tensor_cache,
             'updated_coordinates': integ_out['update_coordinates'],
             'kinetic_energy': integ_out['kinetic_energy'],
             'temperature': integ_out['temperature'],
