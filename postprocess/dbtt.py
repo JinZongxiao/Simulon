@@ -14,21 +14,30 @@ def collect_dbtt_rows(root_dir: str | Path) -> list[dict]:
                 data = json.load(f)
         except Exception:
             continue
-        if "max_stress_bar" not in data or "max_cmod_A" not in data or "temperature_k" not in data:
+        stress_max = data.get("max_stress_bar", data.get("stress_max_bar"))
+        if stress_max is None or "max_cmod_A" not in data or "temperature_k" not in data:
             continue
         rows.append(
             {
                 "orientation": str(data.get("orientation", "unknown")),
                 "temperature_k": float(data["temperature_k"]),
-                "max_stress_bar": float(data.get("max_stress_bar", 0.0)),
+                "max_stress_bar": float(stress_max),
                 "peak_stress_magnitude_bar": float(
-                    data.get("peak_stress_magnitude_bar", abs(float(data.get("max_stress_bar", 0.0))))
+                    data.get("peak_stress_magnitude_bar", abs(float(stress_max)))
                 ),
                 "final_stress_bar": float(data.get("final_stress_bar", 0.0)),
                 "max_cmod_A": float(data["max_cmod_A"]),
                 "final_cmod_A": float(data.get("final_cmod_A", 0.0)),
                 "max_applied_strain": float(data.get("max_applied_strain", 0.0)),
                 "cmod_at_peak_stress_A": float(data.get("cmod_at_peak_stress_A", 0.0)),
+                "stress_retention_ratio": float(
+                    data.get(
+                        "stress_retention_ratio",
+                        0.0 if abs(float(data.get("peak_stress_magnitude_bar", abs(float(stress_max))))) <= 1.0e-12
+                        else float(data.get("final_stress_bar", 0.0)) / float(data.get("peak_stress_magnitude_bar", abs(float(stress_max)))),
+                    )
+                ),
+                "fracture_work_proxy_bar_A": float(data.get("fracture_work_proxy_bar_A", 0.0)),
                 "summary_path": str(summary_path),
             }
         )
@@ -49,6 +58,8 @@ def write_dbtt_csv(rows: list[dict], csv_path: str | Path) -> str:
         "final_cmod_A",
         "max_applied_strain",
         "cmod_at_peak_stress_A",
+        "stress_retention_ratio",
+        "fracture_work_proxy_bar_A",
         "summary_path",
     ]
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
@@ -81,24 +92,30 @@ def plot_dbtt(rows: list[dict], output_path: str | Path) -> str:
     for row in rows:
         by_orientation.setdefault(row["orientation"], []).append(row)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.0, 4.0))
+    fig, axes = plt.subplots(1, 3, figsize=(14.0, 4.0))
     for orientation, ori_rows in by_orientation.items():
         ori_rows = sorted(ori_rows, key=lambda row: row["temperature_k"])
         temps = [row["temperature_k"] for row in ori_rows]
-        max_stress = [row["peak_stress_magnitude_bar"] for row in ori_rows]
+        final_stress = [row["final_stress_bar"] for row in ori_rows]
         max_cmod = [row["max_cmod_A"] for row in ori_rows]
-        axes[0].plot(temps, max_stress, marker="o", linewidth=1.8, label=orientation)
+        retention = [row["stress_retention_ratio"] for row in ori_rows]
+        axes[0].plot(temps, final_stress, marker="o", linewidth=1.8, label=orientation)
         axes[1].plot(temps, max_cmod, marker="o", linewidth=1.8, label=orientation)
+        axes[2].plot(temps, retention, marker="o", linewidth=1.8, label=orientation)
 
     axes[0].set_xlabel("Temperature (K)")
-    axes[0].set_ylabel("Peak stress magnitude (bar)")
+    axes[0].set_ylabel("Final stress (bar)")
     axes[0].grid(True, alpha=0.3)
     axes[1].set_xlabel("Temperature (K)")
     axes[1].set_ylabel("Max CMOD (A)")
     axes[1].grid(True, alpha=0.3)
+    axes[2].set_xlabel("Temperature (K)")
+    axes[2].set_ylabel("Stress retention ratio")
+    axes[2].grid(True, alpha=0.3)
     if by_orientation:
         axes[0].legend()
         axes[1].legend()
+        axes[2].legend()
     fig.tight_layout()
     fig.savefig(output_path, dpi=180)
     plt.close(fig)

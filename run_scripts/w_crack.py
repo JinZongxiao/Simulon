@@ -73,6 +73,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target-strain", type=float, default=0.02)
     p.add_argument("--opening-rate-A-ps", type=float, default=None)
     p.add_argument("--print-interval", type=int, default=50)
+    p.add_argument("--traj-interval", type=int, default=0)
     p.add_argument("--smoke", action="store_true")
     return p
 
@@ -128,6 +129,15 @@ def _select_mouth_groups(vx, vy, x_center: float, y_center: float, crack_half_le
             if bool(upper.any().item()) and bool(lower.any().item()):
                 return upper, lower
     raise ValueError("failed to find crack-mouth atoms; increase replicas or crack size")
+
+
+def _write_traj_frame(path: Path, coords: torch.Tensor, atom_types: list[str], comment: str) -> None:
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{coords.shape[0]}\n")
+        f.write(f"{comment}\n")
+        coords_cpu = coords.detach().cpu().tolist()
+        for atom_type, xyz in zip(atom_types, coords_cpu):
+            f.write(f"{atom_type} {xyz[0]:.6f} {xyz[1]:.6f} {xyz[2]:.6f}\n")
 
 
 def run_w_crack(args) -> dict:
@@ -248,6 +258,11 @@ def run_w_crack(args) -> dict:
                 print(f"Equil {eq_step + 1}/{args.equil_steps}: T={float(eq_out['temperature']):.2f} K")
     vy_zero = mol.coordinates @ y_unit
     initial_cmod = float((vy_zero[upper_mouth].mean() - vy_zero[lower_mouth].mean()).item())
+    traj_path = output_dir / "trajectory.xyz"
+    if int(args.traj_interval) > 0:
+        if traj_path.exists():
+            traj_path.unlink()
+        _write_traj_frame(traj_path, mol.coordinates, mol.atom_types, "step=0 strain=0.000000 cmod=0.000000")
 
     csv_path = output_dir / "crack_response.csv"
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
@@ -306,6 +321,14 @@ def run_w_crack(args) -> dict:
                 ]
             )
 
+            if int(args.traj_interval) > 0 and (step + 1) % max(1, int(args.traj_interval)) == 0:
+                _write_traj_frame(
+                    traj_path,
+                    mol.coordinates,
+                    mol.atom_types,
+                    f"step={step + 1} strain={opening / gauge_length:.6f} cmod={cmod:.6f}",
+                )
+
             if (step + 1) % max(1, args.print_interval) == 0:
                 print(
                     f"Step {step + 1}/{args.steps}: "
@@ -335,6 +358,7 @@ def run_w_crack(args) -> dict:
             "output_dir": str(output_dir),
             "csv": str(csv_path),
             "plot": str(plot_path),
+            "traj": str(traj_path) if int(args.traj_interval) > 0 else None,
             "device": str(device),
             "smoke": bool(args.smoke),
         }
@@ -346,6 +370,8 @@ def run_w_crack(args) -> dict:
     print(f"W crack completed. Data: {csv_path}")
     print(f"Summary: {summary_path}")
     print(f"Plot: {plot_path}")
+    if int(args.traj_interval) > 0:
+        print(f"Trajectory: {traj_path}")
     if args.smoke:
         if float(summary.get("max_cmod_A", 0.0)) <= 0.0:
             raise AssertionError("crack smoke test requires positive CMOD response")

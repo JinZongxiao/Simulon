@@ -54,7 +54,7 @@ def _parse_replicas(value: str | None, orientation: str) -> tuple[int, int, int]
 
 def _build_parser() -> argparse.ArgumentParser:
     xyz_default, eam_default, out_default = _default_paths()
-    p = argparse.ArgumentParser(description="Run a minimal W nanoindentation simulation")
+    p = argparse.ArgumentParser(description="Run a W nanoindentation simulation")
     p.add_argument("--structure", default=str(xyz_default))
     p.add_argument("--eam", default=str(eam_default))
     p.add_argument("--output-dir", default=str(out_default))
@@ -64,8 +64,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--replicas", default=None, help="slab replicas as nx,ny,nz")
     p.add_argument("--vacuum-A", type=float, default=24.0)
     p.add_argument("--bottom-thickness-A", type=float, default=3.0)
-    p.add_argument("--steps", type=int, default=1000)
+    p.add_argument("--steps", type=int, default=1000, help="loading steps")
     p.add_argument("--equil-steps", type=int, default=500)
+    p.add_argument("--unload-steps", type=int, default=0)
     p.add_argument("--dt", type=float, default=0.001)
     p.add_argument("--temperature", type=float, default=300.0)
     p.add_argument("--gamma", type=float, default=2.0)
@@ -73,8 +74,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--indenter-stiffness", type=float, default=5.0, help="eV/A^3")
     p.add_argument("--initial-depth-A", type=float, default=0.0)
     p.add_argument("--target-depth-A", type=float, default=2.0)
+    p.add_argument("--final-unload-depth-A", type=float, default=0.0)
     p.add_argument("--indent-rate-A-ps", type=float, default=None)
+    p.add_argument("--unload-rate-A-ps", type=float, default=None)
     p.add_argument("--print-interval", type=int, default=50)
+    p.add_argument("--traj-interval", type=int, default=0)
     p.add_argument("--smoke", action="store_true")
     return p
 
@@ -117,24 +121,35 @@ def _contact_center_height(coords, axis_unit, lateral_origin, radius: float) -> 
     return float((heights[inside] + clearance).max().item())
 
 
+def _write_traj_frame(path: Path, coords: torch.Tensor, atom_types: list[str], comment: str) -> None:
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{coords.shape[0]}\n")
+        f.write(f"{comment}\n")
+        coords_cpu = coords.detach().cpu().tolist()
+        for atom_type, xyz in zip(atom_types, coords_cpu):
+            f.write(f"{atom_type} {xyz[0]:.6f} {xyz[1]:.6f} {xyz[2]:.6f}\n")
+
+
 def run_w_indent(args) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    base_output_dir = Path(args.output_dir)
-    output_dir = base_output_dir / f"orientation_{args.orientation}"
+    output_dir = Path(args.output_dir) / f"orientation_{args.orientation}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.smoke:
         args.steps = min(args.steps, 60)
         args.equil_steps = min(args.equil_steps, 5)
+        args.unload_steps = min(max(args.unload_steps, 10), 30)
         args.print_interval = min(args.print_interval, 10)
         args.target_depth_A = min(args.target_depth_A, 0.08)
+        args.final_unload_depth_A = min(args.final_unload_depth_A, 0.02)
         if args.indent_rate_A_ps is not None:
             args.indent_rate_A_ps = min(args.indent_rate_A_ps, 0.5)
+        if args.unload_rate_A_ps is not None:
+            args.unload_rate_A_ps = min(args.unload_rate_A_ps, 0.5)
         if args.replicas is None:
             args.replicas = "3,3,3"
 
     parser = EAMParser(filepath=args.eam, device=device)
-    structure_path = args.structure
     if args.orientation == "custom":
         replicas = None
         coords = _read_xyz_coords(args.structure)
@@ -184,24 +199,37 @@ def run_w_indent(args) -> dict:
     anchor_perp = top_perp[anchor_local].detach().clone()
     anchor_height = float(top_projected[anchor_local].item())
 
-    def center_at_depth(depth_A: float) -> torch.Tensor:
-        normal_position = contact_center_height - float(depth_A)
-        return anchor_perp + normal_position * axis_unit
-
-    if args.target_depth_A <= args.initial_depth_A:
-        raise ValueError("target-depth-A must be larger than initial-depth-A")
-    if args.indent_rate_A_ps is None:
-        indent_rate = (float(args.target_depth_A) - float(args.initial_depth_A)) / (
-            max(1, int(args.steps)) * float(args.dt)
-        )
-    else:
-        indent_rate = float(args.indent_rate_A_ps)
     contact_center_height = _contact_center_height(
         mol.coordinates,
         axis_unit,
         anchor_perp,
         args.indenter_radius_A,
     )
+
+    def center_at_depth(depth_A: float) -> torch.Tensor:
+        normal_position = contact_center_height - float(depth_A)
+        return anchor_perp + normal_position * axis_unit
+
+    if args.target_depth_A <= args.initial_depth_A:
+        raise ValueError("target-depth-A must be larger than initial-depth-A")
+    if args.final_unload_depth_A > args.target_depth_A:
+        raise ValueError("final-unload-depth-A must be <= target-depth-A")
+
+    if args.indent_rate_A_ps is None:
+        indent_rate = (float(args.target_depth_A) - float(args.initial_depth_A)) / (
+            max(1, int(args.steps)) * float(args.dt)
+        )
+    else:
+        indent_rate = float(args.indent_rate_A_ps)
+    if int(args.unload_steps) > 0:
+        if args.unload_rate_A_ps is None:
+            unload_rate = (float(args.target_depth_A) - float(args.final_unload_depth_A)) / (
+                max(1, int(args.unload_steps)) * float(args.dt)
+            )
+        else:
+            unload_rate = float(args.unload_rate_A_ps)
+    else:
+        unload_rate = 0.0
 
     eam_force = EAMForce(parser, mol)
     indenter = SphericalIndenterForce(
@@ -223,9 +251,9 @@ def run_w_indent(args) -> dict:
     with torch.no_grad():
         mol.atom_velocities[fixed_mask] = 0.0
 
-    if args.equil_steps > 0:
+    if int(args.equil_steps) > 0:
         indenter.set_center(center_at_depth(-0.5))
-        for eq_step in range(args.equil_steps):
+        for eq_step in range(int(args.equil_steps)):
             eq_out = model()
             with torch.no_grad():
                 mol.coordinates[fixed_mask] = fixed_positions
@@ -241,12 +269,25 @@ def run_w_indent(args) -> dict:
             args.indenter_radius_A,
         )
 
+    traj_path = output_dir / "trajectory.xyz"
+    if int(args.traj_interval) > 0:
+        if traj_path.exists():
+            traj_path.unlink()
+        _write_traj_frame(
+            traj_path,
+            mol.coordinates,
+            mol.atom_types,
+            "step=0 phase=equilibrated depth=0.000000",
+        )
+
     csv_path = output_dir / "load_depth.csv"
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
             [
                 "step",
+                "phase",
+                "phase_step",
                 "depth_A",
                 "command_depth_A",
                 "load_nN",
@@ -263,9 +304,19 @@ def run_w_indent(args) -> dict:
             ]
         )
 
-        for step in range(args.steps):
-            command_depth = float(args.initial_depth_A) + (step + 1) * indent_rate * float(args.dt)
-            command_depth = min(command_depth, float(args.target_depth_A))
+        total_steps = int(args.steps) + int(args.unload_steps)
+        step_global = 0
+        load_steps = [("load", i + 1) for i in range(int(args.steps))]
+        unload_steps = [("unload", i + 1) for i in range(int(args.unload_steps))]
+        for phase, phase_step in load_steps + unload_steps:
+            if phase == "load":
+                command_depth = float(args.initial_depth_A) + phase_step * indent_rate * float(args.dt)
+                command_depth = min(command_depth, float(args.target_depth_A))
+            else:
+                command_depth = float(args.target_depth_A) - phase_step * unload_rate * float(args.dt)
+                command_depth = max(command_depth, float(args.final_unload_depth_A))
+            step_global += 1
+
             indenter.set_center(center_at_depth(command_depth))
             out = model()
 
@@ -288,7 +339,9 @@ def run_w_indent(args) -> dict:
 
             writer.writerow(
                 [
-                    step + 1,
+                    step_global,
+                    phase,
+                    phase_step,
                     depth,
                     command_depth,
                     load_nN,
@@ -305,14 +358,22 @@ def run_w_indent(args) -> dict:
                 ]
             )
 
-            if (step + 1) % max(1, args.print_interval) == 0:
+            if int(args.traj_interval) > 0 and step_global % max(1, int(args.traj_interval)) == 0:
+                _write_traj_frame(
+                    traj_path,
+                    mol.coordinates,
+                    mol.atom_types,
+                    f"step={step_global} phase={phase} depth={depth:.6f}",
+                )
+
+            if step_global % max(1, args.print_interval) == 0:
                 print(
-                    f"Step {step + 1}/{args.steps}: depth={depth:.4f} A, "
+                    f"Step {step_global}/{total_steps}: phase={phase}, depth={depth:.4f} A, "
                     f"load={load_nN:.4f} nN, contact={indenter.contact_atoms}, "
                     f"Pot_E={potential:.4f} eV, T={temp:.2f} K"
                 )
 
-    summary = summarize_load_depth(csv_path)
+    summary = summarize_load_depth(csv_path, indenter_radius_A=float(args.indenter_radius_A))
     plot_path = output_dir / "load_depth.png"
     plot_load_depth(csv_path, plot_path)
     summary.update(
@@ -322,13 +383,16 @@ def run_w_indent(args) -> dict:
             "orientation": str(args.orientation),
             "replicas": list(replicas) if replicas is not None else None,
             "steps": int(args.steps),
+            "unload_steps": int(args.unload_steps),
             "dt_ps": float(args.dt),
             "temperature_k": float(args.temperature),
             "indenter_radius_A": float(args.indenter_radius_A),
             "indenter_stiffness_ev_A3": float(args.indenter_stiffness),
             "initial_depth_A": float(args.initial_depth_A),
             "target_depth_A": float(args.target_depth_A),
+            "final_unload_depth_A": float(args.final_unload_depth_A),
             "indent_rate_A_ps": float(indent_rate),
+            "unload_rate_A_ps": float(unload_rate),
             "equil_steps": int(args.equil_steps),
             "anchor_height_A": float(anchor_height),
             "anchor_lateral_distance_A": float(top_dist[anchor_local].item()),
@@ -336,6 +400,7 @@ def run_w_indent(args) -> dict:
             "output_dir": str(output_dir),
             "csv": str(csv_path),
             "plot": str(plot_path),
+            "traj": str(traj_path) if int(args.traj_interval) > 0 else None,
             "device": str(device),
             "smoke": bool(args.smoke),
         }
@@ -347,6 +412,8 @@ def run_w_indent(args) -> dict:
     print(f"W indentation completed. Data: {csv_path}")
     print(f"Summary: {summary_path}")
     print(f"Plot: {plot_path}")
+    if int(args.traj_interval) > 0:
+        print(f"Trajectory: {traj_path}")
     if args.smoke:
         if int(summary.get("max_contact_atoms", 0)) <= 0:
             raise AssertionError("indentation smoke test requires at least one contact atom")

@@ -20,6 +20,8 @@ def plot_stress_strain(csv_path: str | Path, png_path: str | Path):
             sxx.append(float(row["stress_xx_bar"]))
             syy.append(float(row.get("stress_yy_bar", row["stress_xx_bar"])))
             szz.append(float(row.get("stress_zz_bar", row["stress_xx_bar"])))
+    if not strains:
+        raise ValueError(f"No tensile data found in {csv_path}")
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot(strains, sxx, label=r"$\sigma_{xx}$", linewidth=2.0)
@@ -46,23 +48,21 @@ def summarize_stress_strain(csv_path: str | Path) -> dict:
         reader = csv.DictReader(f)
         for row in reader:
             strains.append(float(row["strain"]))
-            if "stress_xx_bar" in row:
-                stresses.append(float(row["stress_xx_bar"]))
-                syy.append(float(row.get("stress_yy_bar", row["stress_xx_bar"])))
-                szz.append(float(row.get("stress_zz_bar", row["stress_xx_bar"])))
-            else:
-                stresses.append(float(row["stress_bar"]))
-                syy.append(float(row["stress_bar"]))
-                szz.append(float(row["stress_bar"]))
+            stresses.append(float(row.get("stress_xx_bar", row["stress_bar"])))
+            syy.append(float(row.get("stress_yy_bar", row.get("stress_bar", 0.0))))
+            szz.append(float(row.get("stress_zz_bar", row.get("stress_bar", 0.0))))
             temps.append(float(row.get("temperature_k", 0.0)))
 
     if not strains:
         raise ValueError(f"No tensile data found in {csv_path}")
 
-    n_fit = min(5, len(strains))
-    if n_fit >= 2:
-        ds = strains[n_fit - 1] - strains[0]
-        modulus = 0.0 if abs(ds) < 1e-12 else (stresses[n_fit - 1] - stresses[0]) / ds
+    fit_idx = [i for i, strain in enumerate(strains) if 0.0 <= strain <= min(0.005, max(strains))]
+    if len(fit_idx) < 2:
+        fit_idx = list(range(min(10, len(strains))))
+    if len(fit_idx) >= 2:
+        i0, i1 = fit_idx[0], fit_idx[-1]
+        ds = strains[i1] - strains[i0]
+        modulus = 0.0 if abs(ds) < 1e-12 else (stresses[i1] - stresses[i0]) / ds
     else:
         modulus = 0.0
 

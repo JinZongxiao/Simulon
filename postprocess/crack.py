@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 
 
@@ -28,6 +29,10 @@ def summarize_crack(csv_path: str | Path) -> dict:
         cmod_slope = 0.0 if abs(ds) < 1.0e-12 else (cods[n_fit - 1] - cods[0]) / ds
     else:
         cmod_slope = 0.0
+    fracture_work = 0.0
+    for i in range(1, len(cods)):
+        dc = cods[i] - cods[i - 1]
+        fracture_work += 0.5 * (abs_stresses[i] + abs_stresses[i - 1]) * abs(dc)
     return {
         "n_points": len(rows),
         "max_applied_strain": max(strains),
@@ -40,6 +45,8 @@ def summarize_crack(csv_path: str | Path) -> dict:
         "initial_cmod_slope_A_per_strain": cmod_slope,
         "final_stress_bar": stresses[-1],
         "final_cmod_A": cods[-1],
+        "stress_retention_ratio": 0.0 if abs_stresses[peak_stress_idx] <= 1.0e-12 else stresses[-1] / abs_stresses[peak_stress_idx],
+        "fracture_work_proxy_bar_A": fracture_work,
         "mean_temperature_k": sum(temps) / len(temps),
     }
 
