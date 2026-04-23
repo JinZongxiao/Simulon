@@ -31,3 +31,8 @@ run_output/
 # Temp / test helpers
 _check_imports.py
 _smoke_test.py
+
+# Local tooling / local outputs
+.codex/
+rdf_*.out
+simulon_cuda.cp311-win_amd64.pyd
