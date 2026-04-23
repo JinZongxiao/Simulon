@@ -2,14 +2,15 @@
 
 ## Scope
 
-This guide documents the four independent pure-W mechanics workflows in Simulon:
+This guide documents the four independent pure-W mechanics workflows in Simulon, plus one auxiliary bulk-relax preparation workflow:
 
+- `run_scripts/w_bulk_relax.py`
 - `run_scripts/w_tensile.py`
 - `run_scripts/w_indent.py`
 - `run_scripts/w_crack.py`
 - `run_scripts/w_dbtt_scan.py`
 
-Each workflow can be run alone. The batch wrapper `run_scripts/w_batch_report.py` only orchestrates them; it does not couple their physics.
+Each workflow can be run alone. The batch wrapper `run_scripts/w_batch_report.py` only orchestrates the four mechanics workflows; it does not currently include `w_bulk_relax.py`.
 
 ## Output Structure
 
@@ -19,6 +20,7 @@ Every workflow accepts `--output-dir`. Outputs are grouped by orientation undern
 - indentation: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 - crack: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 - dbtt: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/` with temperature subdirectories inside
+- bulk relax: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 
 When `--orientation custom` is used, the same layout becomes `.../orientation_custom/`.
 
@@ -81,6 +83,52 @@ So the correct custom arguments for this file are:
 - `--orientation custom`
 - `--structure run_data/W/W31250.xyz`
 - `--box-length 80.0`
+
+## Bulk Relax Parameters
+
+Script: `run_scripts/w_bulk_relax.py`
+
+Purpose: relax a bulk W cell toward zero pressure before using it in a tensile run.
+
+- `--target-pressure-bar`
+  Physical meaning: target isotropic pressure for bulk relaxation.
+- `--barostat-tau`
+  Physical meaning: Berendsen pressure relaxation time.
+- `--barostat-compressibility-bar-inv`
+  Physical meaning: effective isotropic compressibility used by the Berendsen barostat.
+- `--barostat-mu-max`
+  Engineering meaning: maximum isotropic scaling per step. Lower values are slower but safer for large systems.
+
+### Bulk Relax Report Fields
+
+- `recommended_box_length_A`
+  Mean final box length after relaxation. Use this as the next `--box-length` for `--orientation custom` tensile runs.
+- `recommended_lattice_param_A`
+  Estimated relaxed cubic BCC lattice parameter when the script can infer the number of cubic cells per axis from atom count.
+- `final_pressure_bar`
+  Final mean pressure after relaxation.
+- `final_box_length_x/y/z`
+  Final box lengths written into the relaxed structure.
+
+### Bulk Relax Large-Structure Example
+
+```bash
+python run_scripts/w_bulk_relax.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --temperature 300 \
+  --gamma 2.0 \
+  --target-pressure-bar 0.0 \
+  --barostat-tau 0.5 \
+  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-mu-max 0.005 \
+  --traj-interval 500 \
+  --output-dir run_output/w_bulk_relax_W31250
+```
+
+Use the relaxed XYZ plus `recommended_box_length_A` as the input for the next tensile attempt.
 
 ## Tensile Parameters
 

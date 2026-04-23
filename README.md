@@ -274,6 +274,46 @@ python run_scripts/w_tensile.py \
 
 `W31250.xyz` contains a cubic BCC W box with `31250 / 2 = 15625 = 25^3` cells and lattice parameter `3.2 A`, so `--box-length 80.0` is the correct value.
 
+### W bulk relax workflow
+
+Use this workflow before large-structure tensile if `summary.json` still reports large `initial_stress_*_abs_bar` after equilibration.
+
+```bash
+python run_scripts/w_bulk_relax.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --temperature 300 \
+  --gamma 2.0 \
+  --target-pressure-bar 0.0 \
+  --barostat-tau 0.5 \
+  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-mu-max 0.005 \
+  --traj-interval 500 \
+  --output-dir run_output/w_bulk_relax_W31250
+```
+
+Outputs:
+
+- `relaxation.csv`
+- `summary.json`
+- relaxed XYZ structure, for example `W_custom_relaxed.xyz`
+- optional `trajectory.xyz`
+
+Key fields in `summary.json`:
+
+- `recommended_box_length_A`
+- `recommended_lattice_param_A` when the script can infer a cubic BCC cell count
+- `final_pressure_bar`
+- `final_box_length_x/y/z`
+
+The intended use is:
+
+1. relax the bulk W structure close to zero pressure
+2. take `recommended_box_length_A` and the relaxed XYZ
+3. use those as the starting point for the next tensile run
+
 ### 7. W nanoindentation workflow
 
 Minimal smoke test:

@@ -274,6 +274,46 @@ python run_scripts/w_tensile.py \
 
 `W31250.xyz` 是一个立方 BCC W 体系，`31250 / 2 = 15625 = 25^3` 个晶胞，晶格常数 `3.2 A`，所以正确的 `--box-length` 是 `80.0`。
 
+### W bulk relax 工作流
+
+如果大体系 tensile 的 `summary.json` 里 `initial_stress_*_abs_bar` 仍然很大，先用这条工作流把 bulk W 结构放松到接近零压，再拿 relaxed 结构去做拉伸。
+
+```bash
+python run_scripts/w_bulk_relax.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --temperature 300 \
+  --gamma 2.0 \
+  --target-pressure-bar 0.0 \
+  --barostat-tau 0.5 \
+  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-mu-max 0.005 \
+  --traj-interval 500 \
+  --output-dir run_output/w_bulk_relax_W31250
+```
+
+输出包括：
+
+- `relaxation.csv`
+- `summary.json`
+- relaxed XYZ 结构，例如 `W_custom_relaxed.xyz`
+- 可选的 `trajectory.xyz`
+
+`summary.json` 里重点看：
+
+- `recommended_box_length_A`
+- 如果脚本能识别出立方 BCC 晶胞数，还会给出 `recommended_lattice_param_A`
+- `final_pressure_bar`
+- `final_box_length_x/y/z`
+
+推荐使用顺序：
+
+1. 先把 bulk W 放松到接近零压
+2. 取 `recommended_box_length_A` 和 relaxed XYZ
+3. 再把它们作为下一条 tensile 的输入
+
 ### 7. W 纳米压痕工作流
 
 最小 smoke test：
