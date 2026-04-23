@@ -19,6 +19,7 @@
 | **EAM** | 删除死代码；向量化查表（无 Python 循环）；加入 virial |
 | **W 拉伸** | 新增 `run_scripts/w_tensile.py`：张量应力输出、取向 BCC-W 结构生成、应力应变绘图、横向各向异性 NPT 支持 |
 | **W 纳米压痕** | 新增 `run_scripts/w_indent.py`：球形压头加载、底层固定 W slab、载荷-深度输出和 smoke test |
+| **W 裂纹** | 新增 `run_scripts/w_crack.py`：中心预裂纹生成、刚性 grip 开口位移加载、应力-CMOD 输出和 smoke test |
 | **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
 
 ---
@@ -31,7 +32,7 @@
 - **三斜 PBC**：统一 `Box` 类，通过 3×3 格矢矩阵处理立方、正交、任意三斜盒子。
 - **Verlet 邻居表**：基于位移阈值（skin/2）的惰性重建；可选 CUDA 扩展加速。
 - **模块化力场**：Lennard-Jones、EAM、Born–Mayer–Huggins，以及用户自定义对势模板。
-- **W 力学流程**：内置钨拉伸和纳米压痕脚本，支持 `[100]/[110]/[111]` 取向结构生成、CSV/PNG 输出和 smoke test。
+- **W 力学流程**：内置钨拉伸、纳米压痕和裂纹开口脚本，支持 `[100]/[110]/[111]` 取向结构生成、CSV/PNG 输出和 smoke test。
 - **Restart**：完整断点续跑支持，每 N 步保存一次，重启无需重新平衡。
 - **RDF 分析器**：在线累积，同类/异类原子对均有正确归一化。
 - **I/O 与工具**：XYZ 读写、CSV 能量日志、轨迹输出、EAM 表格解析、pymatgen/ASE 集成。
@@ -67,6 +68,7 @@ io_utils/
 postprocess/
   stress_strain.py        # 应力应变摘要 + PNG 绘图
   indentation.py          # 载荷-深度摘要 + PNG 绘图
+  crack.py                # 应力-CMOD 摘要 + PNG 绘图
 
 cuda source/
   neighbor_search_kernel.cu
@@ -80,6 +82,7 @@ run_scripts/
   mlps_run.py
   w_tensile.py            # 钨拉伸工作流
   w_indent.py             # 钨纳米压痕工作流
+  w_crack.py              # 钨裂纹开口工作流
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
@@ -265,6 +268,31 @@ python run_scripts/w_indent.py --orientation 100 --replicas 6,6,4 --steps 5000 -
 python run_scripts/w_indent.py --orientation 110 --replicas 6,6,4 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
 python run_scripts/w_indent.py --orientation 111 --replicas 5,5,3 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
 ```
+
+### 8. W 裂纹工作流
+
+最小 smoke test：
+
+```bash
+python run_scripts/w_crack.py --smoke
+python cuda_test/test_w_crack_smoke.py
+```
+
+W `[100]` 裂纹开口示例：
+
+```bash
+python run_scripts/w_crack.py \
+  --orientation 100 \
+  --replicas 8,8,4 \
+  --steps 5000 \
+  --equil-steps 500 \
+  --crack-half-length-A 8.0 \
+  --crack-gap-A 1.2 \
+  --target-strain 0.02 \
+  --gamma 2.0
+```
+
+输出按取向分目录保存，例如 `run_output/w_crack/orientation_100/`，包含 `crack_response.csv`、`summary.json`、`crack_response.png` 和生成的裂纹结构。
 
 ---
 

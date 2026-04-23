@@ -19,6 +19,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 | **EAM** | Dead-code removal; vectorized table lookup (no Python loops); virial added |
 | **W tensile** | Added `run_scripts/w_tensile.py` with tensor stress output, oriented BCC-W generation, stress-strain plotting, and anisotropic lateral NPT support |
 | **W indentation** | Added `run_scripts/w_indent.py` with spherical indenter loading, fixed-bottom W slabs, load-depth output, and smoke-test coverage |
+| **W crack** | Added `run_scripts/w_crack.py` with center precrack generation, rigid-grip opening, stress-CMOD output, and smoke-test coverage |
 | **Performance** | ~384 steps/s on RTX 3050 for 100-atom Ar NVT |
 
 ---
@@ -31,7 +32,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 - **Triclinic PBC**: unified `Box` class handles cubic, orthorhombic, and fully triclinic cells via a 3×3 lattice matrix.
 - **Verlet neighbor list**: lazy rebuild triggered by displacement threshold (skin/2); GPU-accelerated via optional CUDA extension.
 - **Modular force fields**: Lennard-Jones, EAM, Born–Mayer–Huggins, and a user-defined pair-potential template.
-- **W mechanical workflows**: built-in tungsten tensile and nanoindentation scripts with `[100]/[110]/[111]` oriented cell generation, CSV/PNG output, and smoke-test coverage.
+- **W mechanical workflows**: built-in tungsten tensile, nanoindentation, and crack-opening scripts with `[100]/[110]/[111]` oriented cell generation, CSV/PNG output, and smoke-test coverage.
 - **Restart**: full checkpoint/resume support — save every N steps, resume without re-equilibrating.
 - **RDF analyzer**: online accumulation with correct normalization for same-species and cross-species pairs.
 - **I/O & utilities**: XYZ reader/writer, CSV energy logger, trajectory dump, EAM table parser, pymatgen/ASE integration.
@@ -67,6 +68,7 @@ io_utils/
 postprocess/
   stress_strain.py        # Stress-strain summary + PNG plot
   indentation.py          # Load-depth summary + PNG plot
+  crack.py                # Stress-CMOD summary + PNG plot
 
 cuda source/
   neighbor_search_kernel.cu
@@ -80,6 +82,7 @@ run_scripts/
   mlps_run.py
   w_tensile.py            # Tungsten tensile workflow
   w_indent.py             # Tungsten nanoindentation workflow
+  w_crack.py              # Tungsten crack-opening workflow
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
@@ -265,6 +268,31 @@ python run_scripts/w_indent.py --orientation 100 --replicas 6,6,4 --steps 5000 -
 python run_scripts/w_indent.py --orientation 110 --replicas 6,6,4 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
 python run_scripts/w_indent.py --orientation 111 --replicas 5,5,3 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
 ```
+
+### 8. W crack workflow
+
+Minimal smoke test:
+
+```bash
+python run_scripts/w_crack.py --smoke
+python cuda_test/test_w_crack_smoke.py
+```
+
+Example W `[100]` crack-opening run:
+
+```bash
+python run_scripts/w_crack.py \
+  --orientation 100 \
+  --replicas 8,8,4 \
+  --steps 5000 \
+  --equil-steps 500 \
+  --crack-half-length-A 8.0 \
+  --crack-gap-A 1.2 \
+  --target-strain 0.02 \
+  --gamma 2.0
+```
+
+Outputs are grouped by orientation, e.g. `run_output/w_crack/orientation_100/`, and include `crack_response.csv`, `summary.json`, `crack_response.png`, and the generated cracked structure.
 
 ---
 
