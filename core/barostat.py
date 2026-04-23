@@ -4,9 +4,9 @@ core/barostat.py — Barostat implementations
 Pressure units are bar externally:
   1 eV/Å^3 = 160 217.66 bar
 
-This module now provides:
+This module provides:
   - BerendsenBarostat: legacy isotropic pressure control
-  - AnisotropicNPTBarostat: diagonal extended-system anisotropic barostat
+  - AnisotropicNPTBarostat: diagonal anisotropic pressure controller
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class BerendsenBarostat:
         P_ev_ang3 = (2.0 * kinetic_energy + virial) / (3.0 * V)
         P_inst = float(P_ev_ang3) * _EV_ANG3_TO_BAR
 
-        mu3 = 1.0 - self.kappa * (dt / self.tau_p) * (self.target_P - P_inst)
+        mu3 = 1.0 - self.kappa * (dt / self.tau_p) * (P_inst - self.target_P)
         mu3 = max(mu3, (1.0 - self.mu_max) ** 3)
         mu3 = min(mu3, (1.0 + self.mu_max) ** 3)
         mu = mu3 ** (1.0 / 3.0)
@@ -71,21 +71,19 @@ class BerendsenBarostat:
 
 class AnisotropicNPTBarostat:
     """
-    Diagonal extended-system anisotropic barostat.
+    Diagonal anisotropic pressure controller.
 
-    This class evolves box strain rates eta_dot [1/ps] for each controlled axis:
+    The previous extended-system implementation coupled the pressure force to
+    the full cell volume. For large cells this made the lateral controller
+    size-dependent and could drive runaway expansion even after the lateral
+    stress had already converged near zero. The current implementation instead
+    evolves the logarithmic box strain rate using a compressibility-scaled
+    pressure mismatch:
 
-      d eta_dot_i / dt = V * (P_int,i - P_ext,i) / W_i - gamma_p * eta_dot_i + noise_i / W_i
+      d eta_dot_i / dt = -kappa * (P_int,i - P_ext,i) / tau_p^2 - gamma_p * eta_dot_i
 
-    and applies:
-
-      H_new = diag(exp(dt * eta_dot)) @ H_old
-      r_new = s @ H_new                      (fractional coordinates s kept fixed)
-      v_new = exp(-dt * eta_dot) * v_old     (barostat coupling on peculiar velocity)
-
-    It is diagonal-only by design, which is sufficient for tensile runs where
-    the loading axis is controlled externally and lateral axes are pressure
-    controlled.
+    with a deadband around the target pressure. This keeps the controller
+    anisotropic, lattice-axis aware, and stable across different system sizes.
     """
 
     def __init__(
@@ -97,6 +95,8 @@ class AnisotropicNPTBarostat:
         gamma_p: float = 2.0,
         control_axes = (True, True, True),
         max_eta_dot: float = 0.05,
+        compressibility_bar_inv: float = 3.2e-6,
+        pressure_tolerance_bar: float = 25.0,
         stochastic: bool = False,
     ):
         self.molecular = molecular
@@ -115,11 +115,10 @@ class AnisotropicNPTBarostat:
         self.tau_p = float(tau_p)
         self.gamma_p = float(gamma_p)
         self.max_eta_dot = float(max_eta_dot)
+        self.compressibility_bar_inv = float(compressibility_bar_inv)
+        self.compressibility_ev_ang3_inv = self.compressibility_bar_inv * _EV_ANG3_TO_BAR
+        self.pressure_tolerance_bar = float(pressure_tolerance_bar)
         self.stochastic = bool(stochastic)
-
-        dof = max(1, 3 * int(getattr(molecular, "atom_count", 1)))
-        piston_mass = dof * _KB_EV_K * max(self.temperature_k, 1.0) * (self.tau_p ** 2)
-        self.W = torch.full((3,), piston_mass, device=self.device, dtype=torch.float64)
         self.eta_dot = torch.zeros(3, device=self.device, dtype=torch.float64)
 
     def step(
@@ -143,20 +142,30 @@ class AnisotropicNPTBarostat:
         axes = axes / torch.linalg.norm(axes, dim=1, keepdim=True).clamp_min(1e-12)
         p_axis_ev_ang3 = torch.einsum("ai,ij,aj->a", axes, p_int_ev_ang3, axes)
 
-        delta_p = p_axis_ev_ang3 - p_ext_ev_ang3
-        force_eta = volume * delta_p
-        accel = force_eta / self.W
+        p_axis_bar = p_axis_ev_ang3 * _EV_ANG3_TO_BAR
+        delta_p_bar = p_axis_bar - self.target_pressure_bar
+        within_tol = torch.abs(delta_p_bar) <= self.pressure_tolerance_bar
+        delta_p_eff_bar = torch.where(within_tol, torch.zeros_like(delta_p_bar), delta_p_bar)
 
+        accel = -self.compressibility_bar_inv * delta_p_eff_bar / max(self.tau_p ** 2, 1e-12)
         if self.gamma_p > 0.0:
             accel = accel - self.gamma_p * self.eta_dot
         if self.stochastic:
-            sigma_noise = torch.sqrt(2.0 * self.gamma_p * _KB_EV_K * self.temperature_k / self.W / max(dt, 1e-12))
+            sigma_noise = torch.full_like(
+                accel,
+                (self.compressibility_bar_inv * _KB_EV_K * max(self.temperature_k, 1.0))
+                / max(self.tau_p, 1e-12),
+            )
             noise = torch.randn(3, device=self.device, dtype=torch.float64) * sigma_noise
             accel = accel + noise
+        if torch.any(within_tol):
+            hold_gamma = max(self.gamma_p, 5.0)
+            accel = torch.where(within_tol, -hold_gamma * self.eta_dot, accel)
 
         eta_dot_new = self.eta_dot + dt * accel
         eta_dot_new = torch.clamp(eta_dot_new, -self.max_eta_dot, self.max_eta_dot)
         eta_dot_new = torch.where(self.control_axes, eta_dot_new, torch.zeros_like(eta_dot_new))
+        eta_dot_new = torch.where(within_tol & (torch.abs(eta_dot_new) < 1e-7), torch.zeros_like(eta_dot_new), eta_dot_new)
         self.eta_dot = eta_dot_new
 
         scale = torch.exp(dt * self.eta_dot)
@@ -186,4 +195,4 @@ class AnisotropicNPTBarostat:
                 mol.box_length = float(new_lengths[0].item())
 
         mol.last_positions = mol.coordinates.clone()
-        return (p_axis_ev_ang3 * _EV_ANG3_TO_BAR).to(mol.coordinates.dtype)
+        return p_axis_bar.to(mol.coordinates.dtype)

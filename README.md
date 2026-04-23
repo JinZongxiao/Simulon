@@ -237,7 +237,19 @@ Each tensile output directory contains:
 - `stress_strain.png`
 - generated oriented structure, e.g. `W_100_generated.xyz`
 
-The CSV includes `stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`, box lengths, energy, temperature, and virial tensor diagonals.
+The CSV includes signed stress columns (`stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`), tension-positive columns (`tension_xx_bar`, `tension_yy_bar`, `tension_zz_bar`), box lengths, energy, temperature, and virial tensor diagonals.
+
+The updated tensile workflow now:
+
+- performs zero-pressure equilibration before loading via `--equil-steps`
+- reports stress relative to the equilibrated initial state in `stress_xx_bar`
+- writes tension-positive presentation columns as `tension_xx_bar`, `tension_yy_bar`, `tension_zz_bar`
+- also keeps absolute stress columns as `stress_xx_abs_bar`, `stress_yy_abs_bar`, `stress_zz_abs_bar`
+- stabilizes the anisotropic lateral pressure controller with `--barostat-compressibility-bar-inv` and `--barostat-pressure-tolerance-bar`
+- aborts if the lateral box runs away beyond `--max-lateral-box-ratio`
+- can dump an XYZ trajectory with `--traj-interval`
+
+For large `--orientation custom` runs, still check `initial_stress_xx_abs_bar`, `initial_stress_yy_abs_bar`, and `initial_stress_zz_abs_bar` in `summary.json`. If they remain large after equilibration, increase `--equil-steps` or retune the barostat parameters before trusting the tensile curve.
 
 Large custom-structure example on a server:
 
@@ -246,13 +258,18 @@ python run_scripts/w_tensile.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
-  --strain-rate 0.00005 \
+  --steps 100000 \
+  --equil-steps 1000 \
+  --strain-rate 0.0004 \
   --lateral-mode stress-free \
   --barostat-tau 0.1 \
   --barostat-gamma 1.0 \
+  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-pressure-tolerance-bar 25.0 \
+  --max-lateral-box-ratio 2.0 \
   --gamma 2.0 \
-  --output-dir run_output/w_tensile_W31250
+  --traj-interval 1000 \
+  --output-dir run_output/prod_w_tensile_W31250
 ```
 
 `W31250.xyz` contains a cubic BCC W box with `31250 / 2 = 15625 = 25^3` cells and lattice parameter `3.2 A`, so `--box-length 80.0` is the correct value.
@@ -283,6 +300,20 @@ python run_scripts/w_indent.py \
 
 Outputs are grouped by orientation, e.g. `run_output/w_indent/orientation_100/`, and include `load_depth.csv`, `summary.json`, `load_depth.png`, and the generated slab structure.
 
+The updated indentation workflow supports:
+
+- loading + unloading in a single run
+- `phase=load/unload` in the CSV
+- optional trajectory dumping through `--traj-interval`
+- approximate Oliver-Pharr analysis in `summary.json`
+  - `unload_initial_stiffness_nN_per_A`
+  - `oliver_pharr_contact_depth_A`
+  - `projected_contact_area_A2`
+  - `hardness_GPa`
+  - `reduced_modulus_GPa`
+
+`hardness_GPa` and `reduced_modulus_GPa` are workflow-level estimates. They are useful for internal comparison across runs, but they are not yet a fully calibrated experimental nanoindentation pipeline.
+
 Large custom-structure example:
 
 ```bash
@@ -290,14 +321,17 @@ python run_scripts/w_indent.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
+  --steps 10000 \
   --equil-steps 1000 \
+  --unload-steps 5000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
   --initial-depth-A 0.0 \
-  --target-depth-A 2.0 \
+  --target-depth-A 4.0 \
+  --final-unload-depth-A 0.5 \
   --gamma 2.0 \
-  --output-dir run_output/w_indent_W31250
+  --traj-interval 500 \
+  --output-dir run_output/prod_w_indent_W31250
 ```
 
 For `--orientation custom`, the current implementation assumes the imported XYZ belongs to an orthogonal cubic box.
@@ -335,6 +369,8 @@ python run_scripts/w_crack.py \
 
 Outputs are grouped by orientation, e.g. `run_output/w_crack/orientation_100/`, and include `crack_response.csv`, `summary.json`, `crack_response.png`, and the generated cracked structure.
 
+The crack workflow can now dump `trajectory.xyz` with `--traj-interval`.
+
 Large custom-structure example:
 
 ```bash
@@ -342,13 +378,14 @@ python run_scripts/w_crack.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
-  --equil-steps 500 \
+  --steps 10000 \
+  --equil-steps 1000 \
   --crack-half-length-A 8.0 \
   --crack-gap-A 1.2 \
-  --target-strain 0.02 \
+  --target-strain 0.03 \
   --gamma 2.0 \
-  --output-dir run_output/w_crack_W31250
+  --traj-interval 500 \
+  --output-dir run_output/prod_w_crack_W31250
 ```
 
 ### 9. W DBTT scan
@@ -373,6 +410,14 @@ Outputs are written to `run_output/w_dbtt/` and include per-temperature crack ru
 - `dbtt_summary.json`
 - `dbtt_summary.png`
 
+The DBTT summary now emphasizes crack-response trends that are more interpretable than peak stress alone:
+
+- `final_stress_bar`
+- `stress_retention_ratio`
+- `max_cmod_A`
+
+For the current W crack-based DBTT workflow, treat these three fields as the primary interpretation axis. `peak_stress_magnitude_bar` is still reported, but it should not be used alone to claim the transition temperature.
+
 Large custom-structure example:
 
 ```bash
@@ -381,10 +426,10 @@ python run_scripts/w_dbtt_scan.py \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
   --temperatures 100,200,300,400,500,600 \
-  --steps 1000 \
-  --equil-steps 200 \
+  --steps 5000 \
+  --equil-steps 500 \
   --gamma 2.0 \
-  --output-dir run_output/w_dbtt_W31250
+  --output-dir run_output/prod_w_dbtt_W31250
 ```
 
 ### 10. Batch report and parameter guide
@@ -412,6 +457,8 @@ python run_scripts/w_batch_report.py \
   --box-length 80.0 \
   --output-dir run_output/w_batch_W31250
 ```
+
+For large production runs, it is still recommended to launch each workflow separately instead of batching all four on one GPU.
 
 ---
 

@@ -237,7 +237,19 @@ python run_scripts/check_w_orientation.py --orientation all
 - `stress_strain.png`
 - 自动生成的取向结构，如 `W_100_generated.xyz`
 
-CSV 中包含 `stress_xx_bar`、`stress_yy_bar`、`stress_zz_bar`、盒长、能量、温度和维里张量对角元。
+CSV 中包含有符号应力列（`stress_xx_bar`、`stress_yy_bar`、`stress_zz_bar`）、拉伸为正的展示列（`tension_xx_bar`、`tension_yy_bar`、`tension_zz_bar`）、盒长、能量、温度和维里张量对角元。
+
+新版拉伸工作流现在会：
+
+- 先通过 `--equil-steps` 做零压预平衡
+- 在 `stress_xx_bar` 中输出相对于平衡初态的应力
+- 额外输出拉伸为正的展示列：`tension_xx_bar`、`tension_yy_bar`、`tension_zz_bar`
+- 同时保留绝对应力列：`stress_xx_abs_bar`、`stress_yy_abs_bar`、`stress_zz_abs_bar`
+- 通过 `--barostat-compressibility-bar-inv` 和 `--barostat-pressure-tolerance-bar` 稳定各向异性侧向控压
+- 如果横向盒长超过 `--max-lateral-box-ratio`，会直接报错终止，避免静默生成失真曲线
+- 通过 `--traj-interval` 输出 `trajectory.xyz`
+
+对大体系 `--orientation custom`，仍建议检查 `summary.json` 里的 `initial_stress_xx_abs_bar`、`initial_stress_yy_abs_bar`、`initial_stress_zz_abs_bar`。如果预平衡后它们仍然很大，先增加 `--equil-steps` 或重新调 barostat 参数，再去解释拉伸曲线。
 
 服务器大体系自定义结构示例：
 
@@ -246,13 +258,18 @@ python run_scripts/w_tensile.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
-  --strain-rate 0.00005 \
+  --steps 100000 \
+  --equil-steps 1000 \
+  --strain-rate 0.0004 \
   --lateral-mode stress-free \
   --barostat-tau 0.1 \
   --barostat-gamma 1.0 \
+  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-pressure-tolerance-bar 25.0 \
+  --max-lateral-box-ratio 2.0 \
   --gamma 2.0 \
-  --output-dir run_output/w_tensile_W31250
+  --traj-interval 1000 \
+  --output-dir run_output/prod_w_tensile_W31250
 ```
 
 `W31250.xyz` 是一个立方 BCC W 体系，`31250 / 2 = 15625 = 25^3` 个晶胞，晶格常数 `3.2 A`，所以正确的 `--box-length` 是 `80.0`。
@@ -283,6 +300,20 @@ python run_scripts/w_indent.py \
 
 输出按取向分目录保存，例如 `run_output/w_indent/orientation_100/`，包含 `load_depth.csv`、`summary.json`、`load_depth.png` 和生成的 slab 结构。
 
+新版压痕工作流支持：
+
+- 单次运行中的加载 + 卸载
+- CSV 里用 `phase=load/unload` 区分阶段
+- `--traj-interval` 输出 `trajectory.xyz`
+- `summary.json` 里给出近似 Oliver-Pharr 分析：
+  - `unload_initial_stiffness_nN_per_A`
+  - `oliver_pharr_contact_depth_A`
+  - `projected_contact_area_A2`
+  - `hardness_GPa`
+  - `reduced_modulus_GPa`
+
+这里的 `hardness_GPa` 和 `reduced_modulus_GPa` 目前应理解为工作流级别的近似估计，更适合做同一套模拟内部比较，还不是严格校准后的实验硬度/模量流程。
+
 大体系自定义结构示例：
 
 ```bash
@@ -290,14 +321,17 @@ python run_scripts/w_indent.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
+  --steps 10000 \
   --equil-steps 1000 \
+  --unload-steps 5000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
   --initial-depth-A 0.0 \
-  --target-depth-A 2.0 \
+  --target-depth-A 4.0 \
+  --final-unload-depth-A 0.5 \
   --gamma 2.0 \
-  --output-dir run_output/w_indent_W31250
+  --traj-interval 500 \
+  --output-dir run_output/prod_w_indent_W31250
 ```
 
 对 `--orientation custom`，当前实现要求输入 XYZ 对应的是正交立方盒。
@@ -335,6 +369,8 @@ python run_scripts/w_crack.py \
 
 输出按取向分目录保存，例如 `run_output/w_crack/orientation_100/`，包含 `crack_response.csv`、`summary.json`、`crack_response.png` 和生成的裂纹结构。
 
+裂纹工作流现在也支持 `--traj-interval` 输出 `trajectory.xyz`。
+
 大体系自定义结构示例：
 
 ```bash
@@ -342,13 +378,14 @@ python run_scripts/w_crack.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
-  --equil-steps 500 \
+  --steps 10000 \
+  --equil-steps 1000 \
   --crack-half-length-A 8.0 \
   --crack-gap-A 1.2 \
-  --target-strain 0.02 \
+  --target-strain 0.03 \
   --gamma 2.0 \
-  --output-dir run_output/w_crack_W31250
+  --traj-interval 500 \
+  --output-dir run_output/prod_w_crack_W31250
 ```
 
 ### 9. W DBTT 温度扫描
@@ -373,6 +410,14 @@ python run_scripts/w_dbtt_scan.py \
 - `dbtt_summary.json`
 - `dbtt_summary.png`
 
+新版 DBTT 汇总不再只看峰值应力，还会重点汇总：
+
+- `final_stress_bar`
+- `stress_retention_ratio`
+- `max_cmod_A`
+
+对当前这套基于裂纹开口的 W DBTT 工作流，建议优先用上面三项判断脆-韧转变。`peak_stress_magnitude_bar` 仍然会保留，但不建议单独拿它下转变温度结论。
+
 大体系自定义结构示例：
 
 ```bash
@@ -381,10 +426,10 @@ python run_scripts/w_dbtt_scan.py \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
   --temperatures 100,200,300,400,500,600 \
-  --steps 1000 \
-  --equil-steps 200 \
+  --steps 5000 \
+  --equil-steps 500 \
   --gamma 2.0 \
-  --output-dir run_output/w_dbtt_W31250
+  --output-dir run_output/prod_w_dbtt_W31250
 ```
 
 ### 10. 批量运行与参数说明
@@ -412,6 +457,8 @@ python run_scripts/w_batch_report.py \
   --box-length 80.0 \
   --output-dir run_output/w_batch_W31250
 ```
+
+但对大体系正式生产，仍建议四条工作流分别提交，不要在一张 GPU 上一次性 batch 四个生产任务。
 
 ---
 

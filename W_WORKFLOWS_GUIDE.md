@@ -99,21 +99,33 @@ Script: `run_scripts/w_tensile.py`
   Physical meaning: pressure relaxation time for anisotropic NPT. Smaller values respond faster but can destabilize the run.
 - `--barostat-gamma`
   Physical meaning: damping applied to the barostat degrees of freedom.
+- `--barostat-compressibility-bar-inv`
+  Physical meaning: effective lateral compressibility used by the anisotropic pressure controller. This sets how strongly the lateral box reacts to a stress mismatch.
+- `--barostat-pressure-tolerance-bar`
+  Physical meaning: deadband around the target lateral stress. Inside this tolerance, the controller only damps its own rate instead of continuing to drift.
+- `--max-lateral-box-ratio`
+  Engineering meaning: safety cutoff on lateral box expansion relative to the equilibrated start of loading. If exceeded, the run aborts instead of silently writing a nonphysical curve.
 
 ### Tensile Report Fields
 
 - `stress_max_bar`
-  Peak axial stress.
+  Peak axial stress, using the tension-positive convention.
 - `peak_strain`
   Strain at peak axial stress.
 - `elastic_slope_bar`
-  Early-stage slope from the first few points. This is a quick stiffness proxy, not a rigorous elastic constant fit.
+  Early-stage slope of the tension-positive axial response. This is a quick stiffness proxy, not a rigorous elastic constant fit.
 - `final_stress_bar`
-  Stress at the last point.
+  Final axial stress, using the tension-positive convention.
 - `stress_drop_bar`
   Difference between peak stress and final stress. Useful for identifying post-peak softening.
 - `mean_final_lateral_stress_bar`
   Mean lateral stress near the end. Useful to judge how well `stress-free` loading released transverse stress.
+- `stress_sign_convention`
+  Current value: `tension_positive`.
+
+The tensile CSV contains both signed virial-style stress columns (`stress_*`) and tension-positive presentation columns (`tension_*`). Use the `tension_*` columns for plotting and interpretation.
+
+For large `--orientation custom` runs, also inspect `initial_stress_xx_abs_bar`, `initial_stress_yy_abs_bar`, and `initial_stress_zz_abs_bar` in `summary.json`. If they remain large after equilibration, extend `--equil-steps` or retune the barostat before interpreting the tensile response.
 
 ### Tensile Large-Structure Example
 
@@ -122,13 +134,18 @@ python run_scripts/w_tensile.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
-  --strain-rate 0.00005 \
+  --steps 100000 \
+  --equil-steps 1000 \
+  --strain-rate 0.0004 \
   --lateral-mode stress-free \
   --barostat-tau 0.1 \
   --barostat-gamma 1.0 \
+  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-pressure-tolerance-bar 25.0 \
+  --max-lateral-box-ratio 2.0 \
   --gamma 2.0 \
-  --output-dir run_output/w_tensile_W31250
+  --traj-interval 1000 \
+  --output-dir run_output/prod_w_tensile_W31250
 ```
 
 ## Indentation Parameters
@@ -164,6 +181,12 @@ Script: `run_scripts/w_indent.py`
   Early loading slope after contact.
 - `max_contact_atoms`
   Maximum number of atoms simultaneously inside the indenter interaction zone.
+- `hardness_GPa`
+  Oliver-Pharr-style hardness estimate from the current loading-unloading cycle.
+- `reduced_modulus_GPa`
+  Oliver-Pharr-style reduced modulus estimate from the initial unloading stiffness.
+
+These hardness and modulus fields are currently workflow-level estimates. They are useful for comparing runs inside Simulon, but they should not yet be treated as a fully calibrated experimental nanoindentation pipeline.
 
 ### Indentation Large-Structure Example
 
@@ -174,14 +197,17 @@ python run_scripts/w_indent.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
+  --steps 10000 \
   --equil-steps 1000 \
+  --unload-steps 5000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
   --initial-depth-A 0.0 \
-  --target-depth-A 2.0 \
+  --target-depth-A 4.0 \
+  --final-unload-depth-A 0.5 \
   --gamma 2.0 \
-  --output-dir run_output/w_indent_W31250
+  --traj-interval 500 \
+  --output-dir run_output/prod_w_indent_W31250
 ```
 
 ## Crack Parameters
@@ -215,6 +241,10 @@ Script: `run_scripts/w_crack.py`
   Stress when the maximum CMOD occurs.
 - `initial_cmod_slope_A_per_strain`
   Early CMOD-versus-strain slope. This is a compliance proxy.
+- `stress_retention_ratio`
+  Final stress divided by peak stress magnitude.
+- `fracture_work_proxy_bar_A`
+  Area under the stress-CMOD response. Use it as a relative fracture-work proxy, not as a direct toughness value.
 
 ### Crack Large-Structure Example
 
@@ -225,13 +255,14 @@ python run_scripts/w_crack.py \
   --orientation custom \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
-  --steps 5000 \
-  --equil-steps 500 \
+  --steps 10000 \
+  --equil-steps 1000 \
   --crack-half-length-A 8.0 \
   --crack-gap-A 1.2 \
-  --target-strain 0.02 \
+  --target-strain 0.03 \
   --gamma 2.0 \
-  --output-dir run_output/w_crack_W31250
+  --traj-interval 500 \
+  --output-dir run_output/prod_w_crack_W31250
 ```
 
 ## DBTT Scan Parameters
@@ -252,11 +283,17 @@ This workflow repeatedly calls the crack workflow at multiple temperatures.
 ### DBTT Report Fields
 
 - `peak_stress_magnitude_bar`
-  Temperature dependence of peak opening-stress magnitude.
+  Temperature dependence of peak opening-stress magnitude. Keep it for reference, but do not use it alone to identify the transition.
 - `max_cmod_A`
   Temperature dependence of maximum crack opening.
 - `cmod_at_peak_stress_A`
   Crack opening when the crack workflow reaches peak stress. Useful as a simple brittleness-versus-ductility proxy.
+- `final_stress_bar`
+  Residual load carrying capacity at the end of the crack-opening path.
+- `stress_retention_ratio`
+  Final stress divided by peak stress magnitude. Lower values indicate stronger post-peak softening.
+
+For the current crack-based W DBTT workflow, interpret the transition primarily through `final_stress_bar`, `stress_retention_ratio`, and `max_cmod_A`.
 
 ### DBTT Large-Structure Example
 
@@ -266,10 +303,10 @@ python run_scripts/w_dbtt_scan.py \
   --structure run_data/W/W31250.xyz \
   --box-length 80.0 \
   --temperatures 100,200,300,400,500,600 \
-  --steps 1000 \
-  --equil-steps 200 \
+  --steps 5000 \
+  --equil-steps 500 \
   --gamma 2.0 \
-  --output-dir run_output/w_dbtt_W31250
+  --output-dir run_output/prod_w_dbtt_W31250
 ```
 
 ## Batch Runner

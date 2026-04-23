@@ -4,6 +4,18 @@ import csv
 from pathlib import Path
 
 
+def _get_tension_value(row: dict, axis: str) -> float:
+    tension_key = f"tension_{axis}_bar"
+    stress_key = f"stress_{axis}_bar"
+    if tension_key in row and row[tension_key] not in ("", None):
+        return float(row[tension_key])
+    if stress_key in row and row[stress_key] not in ("", None):
+        return float(row[stress_key])
+    if axis == "xx":
+        return float(row.get("stress_bar", 0.0))
+    return 0.0
+
+
 def plot_stress_strain(csv_path: str | Path, png_path: str | Path):
     import matplotlib.pyplot as plt
 
@@ -17,18 +29,18 @@ def plot_stress_strain(csv_path: str | Path, png_path: str | Path):
         reader = csv.DictReader(f)
         for row in reader:
             strains.append(float(row["strain"]))
-            sxx.append(float(row["stress_xx_bar"]))
-            syy.append(float(row.get("stress_yy_bar", row["stress_xx_bar"])))
-            szz.append(float(row.get("stress_zz_bar", row["stress_xx_bar"])))
+            sxx.append(_get_tension_value(row, "xx"))
+            syy.append(_get_tension_value(row, "yy"))
+            szz.append(_get_tension_value(row, "zz"))
     if not strains:
         raise ValueError(f"No tensile data found in {csv_path}")
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.plot(strains, sxx, label=r"$\sigma_{xx}$", linewidth=2.0)
-    ax.plot(strains, syy, label=r"$\sigma_{yy}$", linewidth=1.5, alpha=0.85)
-    ax.plot(strains, szz, label=r"$\sigma_{zz}$", linewidth=1.5, alpha=0.85)
+    ax.plot(strains, sxx, label=r"Axial $\sigma_{xx}$", linewidth=2.0)
+    ax.plot(strains, syy, label=r"Lateral $\sigma_{yy}$", linewidth=1.5, alpha=0.85)
+    ax.plot(strains, szz, label=r"Lateral $\sigma_{zz}$", linewidth=1.5, alpha=0.85)
     ax.set_xlabel("Engineering strain")
-    ax.set_ylabel("Stress (bar)")
+    ax.set_ylabel("Tension-positive stress (bar)")
     ax.set_title("W tensile stress-strain response")
     ax.grid(True, alpha=0.25)
     ax.legend()
@@ -48,9 +60,9 @@ def summarize_stress_strain(csv_path: str | Path) -> dict:
         reader = csv.DictReader(f)
         for row in reader:
             strains.append(float(row["strain"]))
-            stresses.append(float(row.get("stress_xx_bar", row["stress_bar"])))
-            syy.append(float(row.get("stress_yy_bar", row.get("stress_bar", 0.0))))
-            szz.append(float(row.get("stress_zz_bar", row.get("stress_bar", 0.0))))
+            stresses.append(_get_tension_value(row, "xx"))
+            syy.append(_get_tension_value(row, "yy"))
+            szz.append(_get_tension_value(row, "zz"))
             temps.append(float(row.get("temperature_k", 0.0)))
 
     if not strains:
@@ -82,4 +94,5 @@ def summarize_stress_strain(csv_path: str | Path) -> dict:
         "mean_final_lateral_stress_bar": final_mean_lateral,
         "max_temperature_k": max(temps),
         "elastic_slope_bar": modulus,
+        "stress_sign_convention": "tension_positive",
     }

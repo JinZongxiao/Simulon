@@ -79,6 +79,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--equil-target-pressure-bar", type=float, default=0.0)
     p.add_argument("--barostat-tau", type=float, default=0.2)
     p.add_argument("--barostat-gamma", type=float, default=2.0)
+    p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-6)
+    p.add_argument("--barostat-pressure-tolerance-bar", type=float, default=25.0)
+    p.add_argument("--max-lateral-box-ratio", type=float, default=2.0)
     p.add_argument("--print-interval", type=int, default=20)
     p.add_argument("--traj-interval", type=int, default=0)
     p.add_argument("--smoke", action="store_true")
@@ -140,6 +143,8 @@ def _make_loading_barostat(args, mol):
         tau_p=args.barostat_tau,
         gamma_p=args.barostat_gamma,
         control_axes=tuple(control_axes),
+        compressibility_bar_inv=args.barostat_compressibility_bar_inv,
+        pressure_tolerance_bar=args.barostat_pressure_tolerance_bar,
     )
 
 
@@ -211,6 +216,8 @@ def run_w_tensile(args) -> dict:
             tau_p=args.barostat_tau,
             gamma_p=args.barostat_gamma,
             control_axes=(True, True, True),
+            compressibility_bar_inv=args.barostat_compressibility_bar_inv,
+            pressure_tolerance_bar=args.barostat_pressure_tolerance_bar,
         )
     model = BaseModel(sb, integ, mol, barostat=equil_barostat)
 
@@ -228,6 +235,8 @@ def run_w_tensile(args) -> dict:
         lateral_mode=("fixed" if args.lateral_mode == "stress-free" else args.lateral_mode),
         poisson_ratio=args.poisson_ratio,
     )
+    axis_idx = _axis_to_index(args.axis)
+    lateral_axes = [i for i in range(3) if i != axis_idx]
 
     traj_path = output_dir / "trajectory.xyz"
     if int(args.traj_interval) > 0 and traj_path.exists():
@@ -254,6 +263,14 @@ def run_w_tensile(args) -> dict:
                 "stress_xx_abs_bar",
                 "stress_yy_abs_bar",
                 "stress_zz_abs_bar",
+                "tension_bar",
+                "tension_xx_bar",
+                "tension_yy_bar",
+                "tension_zz_bar",
+                "tension_abs_bar",
+                "tension_xx_abs_bar",
+                "tension_yy_abs_bar",
+                "tension_zz_abs_bar",
                 "potential_energy_ev",
                 "kinetic_energy_ev",
                 "total_energy_ev",
@@ -281,6 +298,14 @@ def run_w_tensile(args) -> dict:
                 float(baseline_abs[0]),
                 float(baseline_abs[1]),
                 float(baseline_abs[2]),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                float(baseline_abs[0]),
+                float(baseline_abs[0]),
+                float(baseline_abs[1]),
+                float(baseline_abs[2]),
                 float(state0["energy"]),
                 float(state0["kinetic_energy"]),
                 float(state0["energy"] + state0["kinetic_energy"]),
@@ -299,8 +324,8 @@ def run_w_tensile(args) -> dict:
             _write_traj_frame(traj_path, mol.coordinates, mol.atom_types, "step=0 strain=0.000000")
 
         for step in range(args.steps):
-            out = model()
             strain = loader.step(args.dt)
+            out = model()
             lengths = loader.current_lengths()
             volume = float(mol.box.volume)
             kinetic_tensor = _kinetic_stress_tensor(model)
@@ -308,12 +333,24 @@ def run_w_tensile(args) -> dict:
             sigma_tensor_bar = ((kinetic_tensor + virial_tensor) / volume) * _EV_ANG3_TO_BAR
             stress_axis_abs = _project_to_lattice_axes(sigma_tensor_bar, mol.box)
             stress_axis_bar = stress_axis_abs - baseline_abs.to(stress_axis_abs)
+            tension_axis_abs = stress_axis_abs
+            tension_axis_bar = stress_axis_bar
 
             pot = float(out["energy"])
             kin = float(out["kinetic_energy"])
             temp = float(out["temperature"])
             virial = float(out["virial"])
             total = pot + kin
+
+            if args.lateral_mode == "stress-free" and args.max_lateral_box_ratio > 0.0:
+                lateral_lengths = lengths[lateral_axes].to(torch.float64)
+                lateral_ratios = lateral_lengths / lengths0[lateral_axes].to(torch.float64).clamp_min(1e-12)
+                if bool(torch.any(lateral_ratios > float(args.max_lateral_box_ratio))):
+                    raise RuntimeError(
+                        "lateral box runaway detected: "
+                        f"ratios={lateral_ratios.detach().cpu().tolist()} "
+                        f"exceed max_lateral_box_ratio={args.max_lateral_box_ratio}"
+                    )
 
             writer.writerow(
                 [
@@ -327,6 +364,14 @@ def run_w_tensile(args) -> dict:
                     float(stress_axis_abs[0]),
                     float(stress_axis_abs[1]),
                     float(stress_axis_abs[2]),
+                    float(tension_axis_bar[0]),
+                    float(tension_axis_bar[0]),
+                    float(tension_axis_bar[1]),
+                    float(tension_axis_bar[2]),
+                    float(tension_axis_abs[0]),
+                    float(tension_axis_abs[0]),
+                    float(tension_axis_abs[1]),
+                    float(tension_axis_abs[2]),
                     pot,
                     kin,
                     total,
@@ -352,7 +397,7 @@ def run_w_tensile(args) -> dict:
             if (step + 1) % max(1, args.print_interval) == 0:
                 print(
                     f"Step {step + 1}/{args.steps}: "
-                    f"strain={strain:.6f}, sigma_xx={float(stress_axis_bar[0]):.2f} bar, "
+                    f"strain={strain:.6f}, sigma_xx_tension={float(tension_axis_bar[0]):.2f} bar, "
                     f"Pot_E={pot:.4f} eV, T={temp:.2f} K"
                 )
 
@@ -372,6 +417,9 @@ def run_w_tensile(args) -> dict:
             "strain_rate_ps_inv": float(args.strain_rate),
             "lateral_mode": str(args.lateral_mode),
             "equil_target_pressure_bar": float(args.equil_target_pressure_bar),
+            "barostat_compressibility_bar_inv": float(args.barostat_compressibility_bar_inv),
+            "barostat_pressure_tolerance_bar": float(args.barostat_pressure_tolerance_bar),
+            "max_lateral_box_ratio": float(args.max_lateral_box_ratio),
             "initial_stress_xx_abs_bar": float(baseline_abs[0]),
             "initial_stress_yy_abs_bar": float(baseline_abs[1]),
             "initial_stress_zz_abs_bar": float(baseline_abs[2]),
