@@ -18,6 +18,9 @@ __device__ __forceinline__ float lerp_table(float r, float inv_dr, int n_r, cons
 }
 
 // density pass kernel
+// 修复：half-list (row=i < col=j) 下原版只做了 rho_i += f_j(r_ij)，
+// 漏掉了 rho_j += f_i(r_ij)，导致索引较大原子的密度严重偏低。
+// 正确做法：对每条边同时累加 i 侧与 j 侧的密度贡献。
 __global__ void density_pass_kernel(
     const float* __restrict__ distances,
     const int64_t* __restrict__ row_index,
@@ -33,14 +36,28 @@ __global__ void density_pass_kernel(
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx >= n_pairs) return;
     float r = distances[idx];
-    int j_atom = col_index[idx];
-    int j_type = (int)atom_types[j_atom];
-    const float* table_j = density_table + j_type * n_r;
-    float val = lerp_table(r, inv_dr, n_r, table_j);
     int i_atom = row_index[idx];
-    atomicAdd(rho_out + i_atom, val);
+    int j_atom = col_index[idx];
+    int i_type = (int)atom_types[i_atom];
+    int j_type = (int)atom_types[j_atom];
+
+    // rho_i += f_{type_j}(r_ij)
+    const float* table_j = density_table + j_type * n_r;
+    float val_j_to_i = lerp_table(r, inv_dr, n_r, table_j);
+    atomicAdd(rho_out + i_atom, val_j_to_i);
+
+    // rho_j += f_{type_i}(r_ij)   ← 原版缺失
+    const float* table_i = density_table + i_type * n_r;
+    float val_i_to_j = lerp_table(r, inv_dr, n_r, table_i);
+    atomicAdd(rho_out + j_atom, val_i_to_j);
 }
 
+// 修复：力公式多元素合金正确性
+// 原版：dF_sum * d_rho_dr (单一 df_j/dr)
+//   - 对 single-element 系统，df_i = df_j 恰好正确
+//   - 对 multi-element 合金 (df_i ≠ df_j) 会产生系统性偏差
+// 正确公式：
+//   f_scalar = dF_i/drho_i · df_{type_j}/dr  +  dF_j/drho_j · df_{type_i}/dr  +  dphi_{ij}/dr
 __global__ void force_pass_kernel(
     const float* __restrict__ distances,
     const float* __restrict__ dist_vec, // [n_pairs,3]
@@ -65,13 +82,21 @@ __global__ void force_pass_kernel(
     int i_type = (int)atom_types[i_atom];
     int j_type = (int)atom_types[j_atom];
 
+    // df_{type_j}(r)/dr —— j 原子密度函数的 r 导数（用于 dF_i/drho_i 项）
     const float* dens_deriv_j = density_deriv_table + j_type * n_r;
-    const float* pair_deriv_ij = pair_deriv_table + ( (i_type * E + j_type) * n_r );
+    float df_j_dr = lerp_table(r, inv_dr, n_r, dens_deriv_j);
 
-    float d_rho_dr = lerp_table(r, inv_dr, n_r, dens_deriv_j);
+    // df_{type_i}(r)/dr —— i 原子密度函数的 r 导数（用于 dF_j/drho_j 项，原版缺失）
+    const float* dens_deriv_i = density_deriv_table + i_type * n_r;
+    float df_i_dr = lerp_table(r, inv_dr, n_r, dens_deriv_i);
+
+    // dphi_{ij}(r)/dr
+    const float* pair_deriv_ij = pair_deriv_table + ( (i_type * E + j_type) * n_r );
     float dphi_dr = lerp_table(r, inv_dr, n_r, pair_deriv_ij);
-    float dF_sum = dF_drho[i_atom] + dF_drho[j_atom];
-    float scalar = dF_sum * d_rho_dr + dphi_dr;
+
+    float scalar = dF_drho[i_atom] * df_j_dr
+                 + dF_drho[j_atom] * df_i_dr
+                 + dphi_dr;
 
     const float* rij = dist_vec + 3*idx;
     float fx = -scalar * rij[0] / r;

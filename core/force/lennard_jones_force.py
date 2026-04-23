@@ -58,8 +58,9 @@ class LennardJonesForce(BackboneInterface, nn.Module):
                  torch.where(in_mid, S_poly, torch.zeros_like(r)))
             dS = torch.where(in_mid, dS_poly, torch.zeros_like(r))
 
+            # F = -dU_eff/dr = Fmag_raw·S - U_raw·dS/dr  (因 Fmag_raw ≡ -dU_raw/dr)
             U_eff = U_raw * S
-            Fmag  = Fmag_raw * S + U_raw * dS
+            Fmag  = Fmag_raw * S - U_raw * dS
 
         elif is_fs:
             # Force-shift：在截断处使力连续

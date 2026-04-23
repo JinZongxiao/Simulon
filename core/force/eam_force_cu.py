@@ -455,27 +455,37 @@ class EAMForceCUDAExt(nn.Module):
         coords = self.molecular.coordinates
         edge_index = self.molecular.graph_data.edge_index
         if edge_index.numel() == 0:
-            return {'energy': torch.zeros(1, device=self.device), 'forces': torch.zeros_like(coords)}
+            zero = torch.zeros((), device=self.device, dtype=coords.dtype)
+            return {'energy': zero, 'forces': torch.zeros_like(coords), 'virial': zero}
         row, col = edge_index
         if getattr(self.molecular.graph_data, 'edge_attr', None) is not None:
             distances_all = self.molecular.graph_data.edge_attr
         else:
             rij = coords[row] - coords[col]
-            L = self.molecular.box_length
-            rij -= torch.round(rij / L) * L
+            if hasattr(self.molecular, 'box'):
+                rij = self.molecular.box.minimum_image(rij)
+            else:
+                L = self.molecular.box_length
+                rij -= torch.round(rij / L) * L
             distances_all = torch.norm(rij, dim=1)
         mask = distances_all < self.cutoff
         if not mask.any():
-            return {'energy': torch.zeros(1, device=self.device), 'forces': torch.zeros_like(coords)}
+            zero = torch.zeros((), device=self.device, dtype=coords.dtype)
+            return {'energy': zero, 'forces': torch.zeros_like(coords), 'virial': zero}
         distances = distances_all[mask].contiguous().to(torch.float32)
         row_m = row[mask].contiguous()
         col_m = col[mask].contiguous()
         rij_vec = coords[row_m] - coords[col_m]
-        L = self.molecular.box_length
-        rij_vec -= torch.round(rij_vec / L) * L
+        if hasattr(self.molecular, 'box'):
+            rij_vec = self.molecular.box.minimum_image(rij_vec)
+        else:
+            L = self.molecular.box_length
+            rij_vec -= torch.round(rij_vec / L) * L
         rij_vec = rij_vec.contiguous().to(torch.float32)
         N = coords.shape[0]
         rho = torch.zeros(N, device=self.device, dtype=torch.float32)
+        row_types = self.atom_type_indices[row_m]
+        col_types = self.atom_type_indices[col_m]
         if self.use_extension and self.ext_mod is not None:
             getattr(self.ext_mod, self._density_fn_name)(
                 distances, row_m, col_m,
@@ -485,11 +495,15 @@ class EAMForceCUDAExt(nn.Module):
                 rho
             )
         else:
-            for j_type in range(self.E):
-                mask_type = (self.atom_type_indices[col_m] == j_type)
-                if mask_type.any():
-                    vals = self._interp_r(distances[mask_type], self.density_table[j_type])
-                    rho.scatter_add_(0, row_m[mask_type], vals)
+            for atom_type in range(self.E):
+                mask_col = (col_types == atom_type)
+                if mask_col.any():
+                    vals = self._interp_r(distances[mask_col], self.density_table[atom_type])
+                    rho.scatter_add_(0, row_m[mask_col], vals)
+                mask_row = (row_types == atom_type)
+                if mask_row.any():
+                    vals = self._interp_r(distances[mask_row], self.density_table[atom_type])
+                    rho.scatter_add_(0, col_m[mask_row], vals)
         embedding_energy = torch.zeros_like(rho)
         dF_drho = torch.zeros_like(rho)
         for i_type in range(self.E):
@@ -500,16 +514,30 @@ class EAMForceCUDAExt(nn.Module):
                 dF_drho[atom_mask] = self._interp_rho(rho_i, i_type, deriv=True)
         total_embedding_energy = embedding_energy.sum()
         pair_energy_edges = torch.zeros_like(distances)
-        row_types = self.atom_type_indices[row_m]
-        col_types = self.atom_type_indices[col_m]
         for i_type in range(self.E):
             for j_type in range(self.E):
                 sel = (row_types == i_type) & (col_types == j_type)
                 if sel.any():
                     pair_energy_edges[sel] = self._interp_r(distances[sel], self.pair_table[i_type, j_type])
-        total_pair_energy = 0.5 * pair_energy_edges.sum()
+        total_pair_energy = pair_energy_edges.sum()
         total_energy = total_embedding_energy + total_pair_energy
         forces = torch.zeros_like(coords)
+        d_density_dr_row = torch.zeros_like(distances)
+        d_density_dr_col = torch.zeros_like(distances)
+        d_pair_dr = torch.zeros_like(distances)
+        for i_type in range(self.E):
+            for j_type in range(self.E):
+                sel = (row_types == i_type) & (col_types == j_type)
+                if sel.any():
+                    r_sel = distances[sel]
+                    d_density_dr_row[sel] = self._interp_r(r_sel, self.density_deriv_table[i_type])
+                    d_density_dr_col[sel] = self._interp_r(r_sel, self.density_deriv_table[j_type])
+                    d_pair_dr[sel] = self._interp_r(r_sel, self.pair_deriv_table[i_type, j_type])
+        force_scalar = (
+            dF_drho[row_m] * d_density_dr_col
+            + dF_drho[col_m] * d_density_dr_row
+            + d_pair_dr
+        )
         if self.use_extension and self.ext_mod is not None:
             getattr(self.ext_mod, self._force_fn_name)(
                 distances,
@@ -525,26 +553,20 @@ class EAMForceCUDAExt(nn.Module):
                 forces
             )
         else:
-            d_density_dr = torch.zeros_like(distances)
-            d_pair_dr = torch.zeros_like(distances)
-            for i_type in range(self.E):
-                for j_type in range(self.E):
-                    sel = (row_types == i_type) & (col_types == j_type)
-                    if sel.any():
-                        r_sel = distances[sel]
-                        d_density_dr[sel] = self._interp_r(r_sel, self.density_deriv_table[j_type])
-                        d_pair_dr[sel] = self._interp_r(r_sel, self.pair_deriv_table[i_type, j_type])
-            dF_sum = dF_drho[row_m] + dF_drho[col_m]
-            scalar = dF_sum * d_density_dr + d_pair_dr
-            force_vec = -scalar.unsqueeze(1) * (rij_vec / (distances.unsqueeze(1) + 1e-8))
+            force_vec = -force_scalar.unsqueeze(1) * (rij_vec / (distances.unsqueeze(1) + 1e-8))
             forces.scatter_add_(0, row_m.unsqueeze(1).expand_as(force_vec), force_vec)
             forces.scatter_add_(0, col_m.unsqueeze(1).expand_as(force_vec), -force_vec)
+        virial = (force_scalar * distances).sum().to(coords.dtype)
         return {
             'energy': total_embedding_energy + total_pair_energy,
             'forces': forces,
+            'virial': virial,
             'embedding_energy': total_embedding_energy,
             'pair_potential': total_pair_energy,
         }
 
+EAMForceCUDA = EAMForceCUDAExt
+
+
 def load_eam_force_cuda():
-    return EAMForceCUDA
+    return EAMForceCUDAExt

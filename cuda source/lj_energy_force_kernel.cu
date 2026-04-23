@@ -92,8 +92,10 @@ __global__ void lj_energy_force_kernel(
         } else {
             S = 0.0f; dSdr = 0.0f;
         }
+        // F = -dU_eff/dr = -(dU_raw/dr · S + U_raw · dS/dr)
+        //                = Fmag_raw·S - U_raw·dSdr  (因 Fmag_raw ≡ -dU_raw/dr)
         U_eff = U_raw * S;
-        Fmag = Fmag_raw * S + U_raw * dSdr;
+        Fmag = Fmag_raw * S - U_raw * dSdr;
     }
 
     // Force vector

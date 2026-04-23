@@ -8,12 +8,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # print("正在解析EAM势文件...")
 # eamfs = 'C:/Users/Administrator/Desktop/phd_workspace/code_repo/Simulon/run_data/WRe_YC2.eam.fs'
-eamfs = '/public/home/normal_bgd/J1N/Simulon/run_data/WRe_YC2.eam.fs'
+eamfs = 'run_data/W/WRe_YC2.eam.fs'
 eam_parser = EAMParser(filepath=eamfs, device=device)
 # print(f"解析成功！元素: {eam_parser.elements}")
 # print(f"截断距离: {eam_parser.cutoff}")
 
-xyz_path = "/public/home/normal_bgd/J1N/Simulon/run_data/W31250.xyz"
+xyz_path = "run_data/W/W31250.xyz"
 # xyz_path = 'C:/Users/Administrator/Desktop/phd_workspace/code_repo/Simulon/run_data/W_bcc_stable.xyz'
 
 # print("正在读取原子结构文件...")
