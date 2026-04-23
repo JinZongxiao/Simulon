@@ -239,6 +239,24 @@ python run_scripts/check_w_orientation.py --orientation all
 
 CSV 中包含 `stress_xx_bar`、`stress_yy_bar`、`stress_zz_bar`、盒长、能量、温度和维里张量对角元。
 
+服务器大体系自定义结构示例：
+
+```bash
+python run_scripts/w_tensile.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --strain-rate 0.00005 \
+  --lateral-mode stress-free \
+  --barostat-tau 0.1 \
+  --barostat-gamma 1.0 \
+  --gamma 2.0 \
+  --output-dir run_output/w_tensile_W31250
+```
+
+`W31250.xyz` 是一个立方 BCC W 体系，`31250 / 2 = 15625 = 25^3` 个晶胞，晶格常数 `3.2 A`，所以正确的 `--box-length` 是 `80.0`。
+
 ### 7. W 纳米压痕工作流
 
 最小 smoke test：
@@ -264,6 +282,25 @@ python run_scripts/w_indent.py \
 ```
 
 输出按取向分目录保存，例如 `run_output/w_indent/orientation_100/`，包含 `load_depth.csv`、`summary.json`、`load_depth.png` 和生成的 slab 结构。
+
+大体系自定义结构示例：
+
+```bash
+python run_scripts/w_indent.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --equil-steps 1000 \
+  --indenter-radius-A 8.0 \
+  --indenter-stiffness 5.0 \
+  --initial-depth-A 0.0 \
+  --target-depth-A 2.0 \
+  --gamma 2.0 \
+  --output-dir run_output/w_indent_W31250
+```
+
+对 `--orientation custom`，当前实现要求输入 XYZ 对应的是正交立方盒。
 
 一次跑完三个取向：
 
@@ -298,6 +335,22 @@ python run_scripts/w_crack.py \
 
 输出按取向分目录保存，例如 `run_output/w_crack/orientation_100/`，包含 `crack_response.csv`、`summary.json`、`crack_response.png` 和生成的裂纹结构。
 
+大体系自定义结构示例：
+
+```bash
+python run_scripts/w_crack.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --equil-steps 500 \
+  --crack-half-length-A 8.0 \
+  --crack-gap-A 1.2 \
+  --target-strain 0.02 \
+  --gamma 2.0 \
+  --output-dir run_output/w_crack_W31250
+```
+
 ### 9. W DBTT 温度扫描
 
 最小 smoke test：
@@ -320,6 +373,20 @@ python run_scripts/w_dbtt_scan.py \
 - `dbtt_summary.json`
 - `dbtt_summary.png`
 
+大体系自定义结构示例：
+
+```bash
+python run_scripts/w_dbtt_scan.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --temperatures 100,200,300,400,500,600 \
+  --steps 1000 \
+  --equil-steps 200 \
+  --gamma 2.0 \
+  --output-dir run_output/w_dbtt_W31250
+```
+
 ### 10. 批量运行与参数说明
 
 用统一输出根目录批量跑四条工作流中的任意组合：
@@ -334,6 +401,17 @@ python run_scripts/w_batch_report.py \
 所有参数含义和报告字段说明见：
 
 - `W_WORKFLOWS_GUIDE.md`
+
+大体系自定义结构批量运行示例：
+
+```bash
+python run_scripts/w_batch_report.py \
+  --workflows tensile,indent,crack,dbtt \
+  --orientations custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --output-dir run_output/w_batch_W31250
+```
 
 ---
 

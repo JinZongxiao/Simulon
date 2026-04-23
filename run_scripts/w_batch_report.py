@@ -34,6 +34,7 @@ def _replicas_for_orientation(args, orientation: str) -> str | None:
         "100": args.replicas_100,
         "110": args.replicas_110,
         "111": args.replicas_111,
+        "custom": None,
     }.get(orientation)
 
 
@@ -42,6 +43,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workflows", default="tensile,indent,crack,dbtt")
     p.add_argument("--orientations", default="100,110,111")
     p.add_argument("--output-dir", default=str(_default_output_dir()))
+    p.add_argument("--structure", default=None)
+    p.add_argument("--box-length", type=float, default=16.0)
     p.add_argument("--eam", default=None)
     p.add_argument("--smoke", action="store_true")
 
@@ -137,6 +140,7 @@ def run_w_batch_report(args) -> dict:
             tensile_args = _build_tensile_parser().parse_args([])
             tensile_args.orientation = orientation
             tensile_args.output_dir = str(root_output / "tensile")
+            tensile_args.box_length = float(args.box_length)
             tensile_args.temperature = float(args.temperature)
             tensile_args.dt = float(args.dt)
             tensile_args.gamma = float(args.gamma)
@@ -148,6 +152,8 @@ def run_w_batch_report(args) -> dict:
             tensile_args.smoke = bool(args.smoke)
             if args.eam:
                 tensile_args.eam = str(args.eam)
+            if args.structure:
+                tensile_args.structure = str(args.structure)
             if replicas:
                 tensile_args.replicas = replicas
             print(f"Running tensile: orientation={orientation}")
@@ -158,6 +164,7 @@ def run_w_batch_report(args) -> dict:
             indent_args = _build_indent_parser().parse_args([])
             indent_args.orientation = orientation
             indent_args.output_dir = str(root_output / "indent")
+            indent_args.box_length = float(args.box_length)
             indent_args.temperature = float(args.temperature)
             indent_args.dt = float(args.dt)
             indent_args.gamma = float(args.gamma)
@@ -171,6 +178,8 @@ def run_w_batch_report(args) -> dict:
             indent_args.smoke = bool(args.smoke)
             if args.eam:
                 indent_args.eam = str(args.eam)
+            if args.structure:
+                indent_args.structure = str(args.structure)
             if replicas:
                 indent_args.replicas = replicas
             print(f"Running indentation: orientation={orientation}")
@@ -181,6 +190,7 @@ def run_w_batch_report(args) -> dict:
             crack_args = _build_crack_parser().parse_args([])
             crack_args.orientation = orientation
             crack_args.output_dir = str(root_output / "crack")
+            crack_args.box_length = float(args.box_length)
             crack_args.temperature = float(args.temperature)
             crack_args.dt = float(args.dt)
             crack_args.gamma = float(args.gamma)
@@ -194,6 +204,8 @@ def run_w_batch_report(args) -> dict:
             crack_args.smoke = bool(args.smoke)
             if args.eam:
                 crack_args.eam = str(args.eam)
+            if args.structure:
+                crack_args.structure = str(args.structure)
             if replicas:
                 crack_args.replicas = replicas
             print(f"Running crack: orientation={orientation}")
@@ -204,6 +216,7 @@ def run_w_batch_report(args) -> dict:
             dbtt_args = _build_dbtt_parser().parse_args([])
             dbtt_args.orientation = orientation
             dbtt_args.output_dir = str(root_output / "dbtt" / f"orientation_{orientation}")
+            dbtt_args.box_length = float(args.box_length)
             dbtt_args.temperatures = str(args.dbtt_temperatures)
             dbtt_args.steps = int(args.dbtt_steps)
             dbtt_args.equil_steps = int(args.dbtt_equil_steps)
@@ -214,6 +227,8 @@ def run_w_batch_report(args) -> dict:
             dbtt_args.smoke = bool(args.smoke)
             if args.eam:
                 dbtt_args.eam = str(args.eam)
+            if args.structure:
+                dbtt_args.structure = str(args.structure)
             if replicas:
                 dbtt_args.replicas = replicas
             print(f"Running DBTT: orientation={orientation}")

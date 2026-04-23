@@ -29,6 +29,7 @@ def _project_root() -> Path:
 def _default_paths():
     root = _project_root()
     return (
+        root / "run_data" / "W" / "W250.xyz",
         root / "run_data" / "W" / "WRe_YC2.eam.fs",
         root / "run_output" / "w_indent",
     )
@@ -52,11 +53,13 @@ def _parse_replicas(value: str | None, orientation: str) -> tuple[int, int, int]
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    eam_default, out_default = _default_paths()
+    xyz_default, eam_default, out_default = _default_paths()
     p = argparse.ArgumentParser(description="Run a minimal W nanoindentation simulation")
+    p.add_argument("--structure", default=str(xyz_default))
     p.add_argument("--eam", default=str(eam_default))
     p.add_argument("--output-dir", default=str(out_default))
-    p.add_argument("--orientation", choices=("100", "110", "111"), default="100")
+    p.add_argument("--box-length", type=float, default=16.0)
+    p.add_argument("--orientation", choices=("100", "110", "111", "custom"), default="100")
     p.add_argument("--lattice-param", type=float, default=3.2)
     p.add_argument("--replicas", default=None, help="slab replicas as nx,ny,nz")
     p.add_argument("--vacuum-A", type=float, default=24.0)
@@ -90,6 +93,19 @@ def _make_slab_box(box_vectors: torch.Tensor, axis: int, vacuum_A: float) -> tor
     return h
 
 
+def _read_xyz_coords(path: str | Path) -> torch.Tensor:
+    coords = []
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    for line in lines[2:]:
+        parts = line.split()
+        if len(parts) >= 4:
+            coords.append([float(parts[1]), float(parts[2]), float(parts[3])])
+    if not coords:
+        raise ValueError(f"no coordinates found in {path}")
+    return torch.tensor(coords, dtype=torch.float64)
+
+
 def _contact_center_height(coords, axis_unit, lateral_origin, radius: float) -> float:
     heights = coords @ axis_unit
     lateral = coords - heights.unsqueeze(1) * axis_unit
@@ -118,12 +134,18 @@ def run_w_indent(args) -> dict:
             args.replicas = "3,3,3"
 
     parser = EAMParser(filepath=args.eam, device=device)
-    replicas = _parse_replicas(args.replicas, args.orientation)
-    coords, base_h = generate_oriented_bcc_w(
-        lattice_param=args.lattice_param,
-        orientation=args.orientation,
-        replicas=replicas,
-    )
+    structure_path = args.structure
+    if args.orientation == "custom":
+        replicas = None
+        coords = _read_xyz_coords(args.structure)
+        base_h = torch.diag(torch.tensor([args.box_length, args.box_length, args.box_length], dtype=torch.float64))
+    else:
+        replicas = _parse_replicas(args.replicas, args.orientation)
+        coords, base_h = generate_oriented_bcc_w(
+            lattice_param=args.lattice_param,
+            orientation=args.orientation,
+            replicas=replicas,
+        )
     box_vectors = _make_slab_box(base_h, axis=2, vacuum_A=args.vacuum_A)
     structure_path = output_dir / f"W_{args.orientation}_indent_slab.xyz"
     write_xyz(
@@ -298,7 +320,7 @@ def run_w_indent(args) -> dict:
             "structure": str(structure_path),
             "eam": str(args.eam),
             "orientation": str(args.orientation),
-            "replicas": list(replicas),
+            "replicas": list(replicas) if replicas is not None else None,
             "steps": int(args.steps),
             "dt_ps": float(args.dt),
             "temperature_k": float(args.temperature),

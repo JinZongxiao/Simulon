@@ -239,6 +239,24 @@ Each tensile output directory contains:
 
 The CSV includes `stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`, box lengths, energy, temperature, and virial tensor diagonals.
 
+Large custom-structure example on a server:
+
+```bash
+python run_scripts/w_tensile.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --strain-rate 0.00005 \
+  --lateral-mode stress-free \
+  --barostat-tau 0.1 \
+  --barostat-gamma 1.0 \
+  --gamma 2.0 \
+  --output-dir run_output/w_tensile_W31250
+```
+
+`W31250.xyz` contains a cubic BCC W box with `31250 / 2 = 15625 = 25^3` cells and lattice parameter `3.2 A`, so `--box-length 80.0` is the correct value.
+
 ### 7. W nanoindentation workflow
 
 Minimal smoke test:
@@ -264,6 +282,25 @@ python run_scripts/w_indent.py \
 ```
 
 Outputs are grouped by orientation, e.g. `run_output/w_indent/orientation_100/`, and include `load_depth.csv`, `summary.json`, `load_depth.png`, and the generated slab structure.
+
+Large custom-structure example:
+
+```bash
+python run_scripts/w_indent.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --equil-steps 1000 \
+  --indenter-radius-A 8.0 \
+  --indenter-stiffness 5.0 \
+  --initial-depth-A 0.0 \
+  --target-depth-A 2.0 \
+  --gamma 2.0 \
+  --output-dir run_output/w_indent_W31250
+```
+
+For `--orientation custom`, the current implementation assumes the imported XYZ belongs to an orthogonal cubic box.
 
 Run all three orientations:
 
@@ -298,6 +335,22 @@ python run_scripts/w_crack.py \
 
 Outputs are grouped by orientation, e.g. `run_output/w_crack/orientation_100/`, and include `crack_response.csv`, `summary.json`, `crack_response.png`, and the generated cracked structure.
 
+Large custom-structure example:
+
+```bash
+python run_scripts/w_crack.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --equil-steps 500 \
+  --crack-half-length-A 8.0 \
+  --crack-gap-A 1.2 \
+  --target-strain 0.02 \
+  --gamma 2.0 \
+  --output-dir run_output/w_crack_W31250
+```
+
 ### 9. W DBTT scan
 
 Minimal smoke test:
@@ -320,6 +373,20 @@ Outputs are written to `run_output/w_dbtt/` and include per-temperature crack ru
 - `dbtt_summary.json`
 - `dbtt_summary.png`
 
+Large custom-structure example:
+
+```bash
+python run_scripts/w_dbtt_scan.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --temperatures 100,200,300,400,500,600 \
+  --steps 1000 \
+  --equil-steps 200 \
+  --gamma 2.0 \
+  --output-dir run_output/w_dbtt_W31250
+```
+
 ### 10. Batch report and parameter guide
 
 Run any subset of the four workflows with a unified output root:
@@ -334,6 +401,17 @@ python run_scripts/w_batch_report.py \
 Detailed parameter meanings and report-field definitions are documented in:
 
 - `W_WORKFLOWS_GUIDE.md`
+
+Large custom-structure batch example:
+
+```bash
+python run_scripts/w_batch_report.py \
+  --workflows tensile,indent,crack,dbtt \
+  --orientations custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --output-dir run_output/w_batch_W31250
+```
 
 ---
 

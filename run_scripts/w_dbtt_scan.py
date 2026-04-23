@@ -29,10 +29,12 @@ def _parse_temperatures(value: str) -> list[float]:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run a W crack-based DBTT temperature scan")
+    p.add_argument("--structure", default=None)
     p.add_argument("--eam", default=None)
     p.add_argument("--temperatures", default="100,200,300,400,500,600")
     p.add_argument("--output-dir", default=str(_default_output_dir()))
-    p.add_argument("--orientation", choices=("100", "110", "111"), default="100")
+    p.add_argument("--box-length", type=float, default=16.0)
+    p.add_argument("--orientation", choices=("100", "110", "111", "custom"), default="100")
     p.add_argument("--replicas", default=None)
     p.add_argument("--steps", type=int, default=1000)
     p.add_argument("--equil-steps", type=int, default=200)
@@ -54,6 +56,7 @@ def run_w_dbtt_scan(args) -> dict:
     crack_args.output_dir = str(Path(args.output_dir))
     crack_args.orientation = args.orientation
     crack_args.smoke = bool(args.smoke)
+    crack_args.box_length = float(args.box_length)
     crack_args.steps = int(args.steps)
     crack_args.equil_steps = int(args.equil_steps)
     crack_args.dt = float(args.dt)
@@ -65,6 +68,8 @@ def run_w_dbtt_scan(args) -> dict:
     crack_args.opening_rate_A_ps = args.opening_rate_A_ps
     if args.replicas:
         crack_args.replicas = str(args.replicas)
+    if args.structure:
+        crack_args.structure = str(args.structure)
     if args.eam:
         crack_args.eam = str(args.eam)
     if args.smoke:

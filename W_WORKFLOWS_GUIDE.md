@@ -20,6 +20,8 @@ Every workflow accepts `--output-dir`. Outputs are grouped by orientation undern
 - crack: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 - dbtt: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/` with temperature subdirectories inside
 
+When `--orientation custom` is used, the same layout becomes `.../orientation_custom/`.
+
 This layout is intentional so you can run one workflow, two workflows, or all workflows without file collisions.
 
 ## Common Parameters
@@ -27,9 +29,16 @@ This layout is intentional so you can run one workflow, two workflows, or all wo
 These appear in more than one workflow.
 
 - `--orientation`
-  Physical meaning: crystal orientation used to generate the W BCC cell. Current supported values are `100`, `110`, and `111`.
+  Physical meaning: crystal orientation used to generate the W BCC cell. Supported values are `100`, `110`, `111`, and `custom`.
+- `--structure`
+  Engineering meaning: path to an input XYZ file. This is only used when `--orientation custom`.
+- `--box-length`
+  Physical meaning: cubic box length in Angstrom for `--orientation custom`.
+  Current implementation assumes the imported XYZ coordinates belong to an orthogonal cubic periodic cell.
+  If your custom structure is not cubic, do not use this path yet.
 - `--replicas`
   Physical meaning: supercell size along the three lattice vectors of the oriented cell. Larger values reduce size effects and boundary artifacts, but cost more GPU memory and wall time.
+  This is ignored when `--orientation custom`.
 - `--eam`
   Physical meaning: EAM parameter file used for W interactions.
 - `--temperature`
@@ -42,6 +51,36 @@ These appear in more than one workflow.
   Engineering meaning: root directory where this workflow writes CSV, summary JSON, PNG, and generated structure files.
 - `--smoke`
   Engineering meaning: small acceptance run. It is for code-path validation, not for publishable physics.
+
+## Custom Large-Structure Mode
+
+All four workflows support `--orientation custom`.
+
+This mode is intended for server runs on larger W structures that already exist as XYZ files, for example:
+
+- `run_data/W/W250.xyz`
+- `run_data/W/W31250.xyz`
+
+For the current implementation, the imported structure must satisfy all of the following:
+
+- the XYZ contains Cartesian coordinates only
+- the true simulation box is an orthogonal cubic box
+- you pass that cubic edge length through `--box-length`
+- the structure is bulk-like and periodic before the workflow adds vacuum or a crack
+
+Example: `W31250.xyz`
+
+- first line: `31250` atoms
+- BCC W has 2 atoms per conventional cell
+- `31250 / 2 = 15625 = 25^3`
+- lattice parameter is `3.2 A`
+- cubic box length is `25 x 3.2 = 80.0 A`
+
+So the correct custom arguments for this file are:
+
+- `--orientation custom`
+- `--structure run_data/W/W31250.xyz`
+- `--box-length 80.0`
 
 ## Tensile Parameters
 
@@ -75,6 +114,22 @@ Script: `run_scripts/w_tensile.py`
   Difference between peak stress and final stress. Useful for identifying post-peak softening.
 - `mean_final_lateral_stress_bar`
   Mean lateral stress near the end. Useful to judge how well `stress-free` loading released transverse stress.
+
+### Tensile Large-Structure Example
+
+```bash
+python run_scripts/w_tensile.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --strain-rate 0.00005 \
+  --lateral-mode stress-free \
+  --barostat-tau 0.1 \
+  --barostat-gamma 1.0 \
+  --gamma 2.0 \
+  --output-dir run_output/w_tensile_W31250
+```
 
 ## Indentation Parameters
 
@@ -110,6 +165,25 @@ Script: `run_scripts/w_indent.py`
 - `max_contact_atoms`
   Maximum number of atoms simultaneously inside the indenter interaction zone.
 
+### Indentation Large-Structure Example
+
+Use a bulk custom structure. The workflow will add vacuum normal to the indentation direction and create the free surface internally.
+
+```bash
+python run_scripts/w_indent.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --equil-steps 1000 \
+  --indenter-radius-A 8.0 \
+  --indenter-stiffness 5.0 \
+  --initial-depth-A 0.0 \
+  --target-depth-A 2.0 \
+  --gamma 2.0 \
+  --output-dir run_output/w_indent_W31250
+```
+
 ## Crack Parameters
 
 Script: `run_scripts/w_crack.py`
@@ -142,6 +216,24 @@ Script: `run_scripts/w_crack.py`
 - `initial_cmod_slope_A_per_strain`
   Early CMOD-versus-strain slope. This is a compliance proxy.
 
+### Crack Large-Structure Example
+
+Use a bulk custom structure. The workflow will add opening-direction vacuum and cut the initial center crack internally.
+
+```bash
+python run_scripts/w_crack.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --steps 5000 \
+  --equil-steps 500 \
+  --crack-half-length-A 8.0 \
+  --crack-gap-A 1.2 \
+  --target-strain 0.02 \
+  --gamma 2.0 \
+  --output-dir run_output/w_crack_W31250
+```
+
 ## DBTT Scan Parameters
 
 Script: `run_scripts/w_dbtt_scan.py`
@@ -166,6 +258,20 @@ This workflow repeatedly calls the crack workflow at multiple temperatures.
 - `cmod_at_peak_stress_A`
   Crack opening when the crack workflow reaches peak stress. Useful as a simple brittleness-versus-ductility proxy.
 
+### DBTT Large-Structure Example
+
+```bash
+python run_scripts/w_dbtt_scan.py \
+  --orientation custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --temperatures 100,200,300,400,500,600 \
+  --steps 1000 \
+  --equil-steps 200 \
+  --gamma 2.0 \
+  --output-dir run_output/w_dbtt_W31250
+```
+
 ## Batch Runner
 
 Script: `run_scripts/w_batch_report.py`
@@ -177,11 +283,13 @@ Key parameters:
 - `--workflows`
   Example: `tensile,indent,crack,dbtt`
 - `--orientations`
-  Example: `100,110,111`
+  Example: `100,110,111` or `custom`
 - `--output-dir`
   Root directory for all selected workflow outputs and the combined report.
 - `--replicas-100`, `--replicas-110`, `--replicas-111`
   Orientation-specific supercell sizes shared by all selected workflows.
+- `--structure`, `--box-length`
+  Shared custom-structure inputs passed through to every selected workflow when `--orientations custom`.
 
 ### Batch Report Meaning
 
@@ -196,9 +304,22 @@ The batch runner writes:
 
 This report is not a paper-ready analysis by itself. It is intended to organize large server sweeps and let you quickly identify which runs need closer inspection.
 
+### Batch Large-Structure Example
+
+```bash
+python run_scripts/w_batch_report.py \
+  --workflows tensile,indent,crack,dbtt \
+  --orientations custom \
+  --structure run_data/W/W31250.xyz \
+  --box-length 80.0 \
+  --output-dir run_output/w_batch_W31250
+```
+
 ## Practical Server Advice
 
 - Start with `--smoke` locally.
+- Before `W31250.xyz`, do one short server sanity run with the same file, for example 200 to 500 steps.
 - Increase `--replicas` before increasing loading rate if you see strong size artifacts.
 - Keep `--dt` conservative when using high strain rate, high opening rate, or a stiff indenter.
 - For DBTT or crack studies, use multiple temperatures and, eventually, multiple random seeds if you need trends robust enough for reporting.
+- Do not run several heavy CUDA workflows on the same GPU at the same time unless you are deliberately stress-testing throughput. For shallow smoke tests, concurrent GPU jobs can make acceptance behavior look noisy.
