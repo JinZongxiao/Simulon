@@ -18,10 +18,12 @@ def summarize_load_depth(csv_path: str | Path) -> dict:
     depths = [float(row["depth_A"]) for row in rows]
     loads = [float(row["load_nN"]) for row in rows]
     temps = [float(row["temperature_k"]) for row in rows]
+    contacts = [int(row["contact_atoms"]) for row in rows]
     return {
         "n_points": len(rows),
         "max_depth_A": max(depths),
         "max_load_nN": max(loads),
+        "max_contact_atoms": max(contacts),
         "final_depth_A": depths[-1],
         "final_load_nN": loads[-1],
         "mean_temperature_k": sum(temps) / len(temps),

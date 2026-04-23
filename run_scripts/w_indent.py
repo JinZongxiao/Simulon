@@ -136,10 +136,19 @@ def run_w_indent(args) -> dict:
 
     lateral_center = 0.5 * mol.box.H[0].to(device=device, dtype=mol.coordinates.dtype)
     lateral_center = lateral_center + 0.5 * mol.box.H[1].to(device=device, dtype=mol.coordinates.dtype)
+    lateral_center = lateral_center - torch.dot(lateral_center, axis_unit) * axis_unit
+    top_layer = projected >= top - 0.35
+    top_coords = mol.coordinates[top_layer]
+    top_projected = projected[top_layer]
+    top_perp = top_coords - top_projected.unsqueeze(1) * axis_unit
+    top_dist = torch.linalg.norm(top_perp - lateral_center.unsqueeze(0), dim=1)
+    anchor_local = int(torch.argmin(top_dist).item())
+    anchor_perp = top_perp[anchor_local].detach().clone()
+    anchor_height = float(top_projected[anchor_local].item())
 
     def center_at_depth(depth_A: float) -> torch.Tensor:
-        normal_position = top + float(args.indenter_radius_A) - float(depth_A)
-        return lateral_center + normal_position * axis_unit
+        normal_position = anchor_height + float(args.indenter_radius_A) - float(depth_A)
+        return anchor_perp + normal_position * axis_unit
 
     eam_force = EAMForce(parser, mol)
     indenter = SphericalIndenterForce(
@@ -237,6 +246,8 @@ def run_w_indent(args) -> dict:
             "indenter_radius_A": float(args.indenter_radius_A),
             "indenter_stiffness_ev_A3": float(args.indenter_stiffness),
             "indent_rate_A_ps": float(args.indent_rate_A_ps),
+            "anchor_height_A": float(anchor_height),
+            "anchor_lateral_distance_A": float(top_dist[anchor_local].item()),
             "output_dir": str(output_dir),
             "csv": str(csv_path),
             "plot": str(plot_path),
@@ -252,6 +263,8 @@ def run_w_indent(args) -> dict:
     print(f"Summary: {summary_path}")
     print(f"Plot: {plot_path}")
     if args.smoke:
+        if int(summary.get("max_contact_atoms", 0)) <= 0:
+            raise AssertionError("indentation smoke test requires at least one contact atom")
         print("SMOKE TEST PASS")
     return summary
 
