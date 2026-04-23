@@ -238,6 +238,7 @@ def run_w_crack(args) -> dict:
                 "opening_A",
                 "stress_bar",
                 "cmod_A",
+                "signed_cmod_A",
                 "potential_energy_ev",
                 "kinetic_energy_ev",
                 "total_energy_ev",
@@ -261,7 +262,8 @@ def run_w_crack(args) -> dict:
             stress_bar = float(stress_axis[1])
 
             vy_now = mol.coordinates @ y_unit
-            cmod = float((vy_now[upper_mouth].mean() - vy_now[lower_mouth].mean()).item() - initial_cmod)
+            signed_cmod = float((vy_now[upper_mouth].mean() - vy_now[lower_mouth].mean()).item() - initial_cmod)
+            cmod = abs(signed_cmod)
             total = float(out["energy"].item() + out["kinetic_energy"].item())
             lengths = mol.box.lengths.detach().cpu()
 
@@ -272,6 +274,7 @@ def run_w_crack(args) -> dict:
                     opening,
                     stress_bar,
                     cmod,
+                    signed_cmod,
                     float(out["energy"].item()),
                     float(out["kinetic_energy"].item()),
                     total,

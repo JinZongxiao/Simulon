@@ -19,11 +19,23 @@ def summarize_load_depth(csv_path: str | Path) -> dict:
     loads = [float(row["load_nN"]) for row in rows]
     temps = [float(row["temperature_k"]) for row in rows]
     contacts = [int(row["contact_atoms"]) for row in rows]
+    peak_idx = max(range(len(loads)), key=lambda i: loads[i])
+    contact_idx = next((i for i, load in enumerate(loads) if load > 1.0e-4), 0)
+    fit_stop = min(len(depths), contact_idx + 5)
+    if fit_stop - contact_idx >= 2:
+        dd = depths[fit_stop - 1] - depths[contact_idx]
+        stiffness = 0.0 if abs(dd) < 1.0e-12 else (loads[fit_stop - 1] - loads[contact_idx]) / dd
+    else:
+        stiffness = 0.0
     return {
         "n_points": len(rows),
         "max_depth_A": max(depths),
         "max_load_nN": max(loads),
         "max_contact_atoms": max(contacts),
+        "peak_load_depth_A": depths[peak_idx],
+        "contact_onset_depth_A": depths[contact_idx],
+        "contact_onset_load_nN": loads[contact_idx],
+        "initial_loading_stiffness_nN_per_A": stiffness,
         "final_depth_A": depths[-1],
         "final_load_nN": loads[-1],
         "mean_temperature_k": sum(temps) / len(temps),

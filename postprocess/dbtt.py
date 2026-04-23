@@ -20,11 +20,15 @@ def collect_dbtt_rows(root_dir: str | Path) -> list[dict]:
             {
                 "orientation": str(data.get("orientation", "unknown")),
                 "temperature_k": float(data["temperature_k"]),
-                "max_stress_bar": float(data["max_stress_bar"]),
+                "max_stress_bar": float(data.get("max_stress_bar", 0.0)),
+                "peak_stress_magnitude_bar": float(
+                    data.get("peak_stress_magnitude_bar", abs(float(data.get("max_stress_bar", 0.0))))
+                ),
                 "final_stress_bar": float(data.get("final_stress_bar", 0.0)),
                 "max_cmod_A": float(data["max_cmod_A"]),
                 "final_cmod_A": float(data.get("final_cmod_A", 0.0)),
                 "max_applied_strain": float(data.get("max_applied_strain", 0.0)),
+                "cmod_at_peak_stress_A": float(data.get("cmod_at_peak_stress_A", 0.0)),
                 "summary_path": str(summary_path),
             }
         )
@@ -39,10 +43,12 @@ def write_dbtt_csv(rows: list[dict], csv_path: str | Path) -> str:
         "orientation",
         "temperature_k",
         "max_stress_bar",
+        "peak_stress_magnitude_bar",
         "final_stress_bar",
         "max_cmod_A",
         "final_cmod_A",
         "max_applied_strain",
+        "cmod_at_peak_stress_A",
         "summary_path",
     ]
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
@@ -79,13 +85,13 @@ def plot_dbtt(rows: list[dict], output_path: str | Path) -> str:
     for orientation, ori_rows in by_orientation.items():
         ori_rows = sorted(ori_rows, key=lambda row: row["temperature_k"])
         temps = [row["temperature_k"] for row in ori_rows]
-        max_stress = [row["max_stress_bar"] for row in ori_rows]
+        max_stress = [row["peak_stress_magnitude_bar"] for row in ori_rows]
         max_cmod = [row["max_cmod_A"] for row in ori_rows]
         axes[0].plot(temps, max_stress, marker="o", linewidth=1.8, label=orientation)
         axes[1].plot(temps, max_cmod, marker="o", linewidth=1.8, label=orientation)
 
     axes[0].set_xlabel("Temperature (K)")
-    axes[0].set_ylabel("Max stress (bar)")
+    axes[0].set_ylabel("Peak stress magnitude (bar)")
     axes[0].grid(True, alpha=0.3)
     axes[1].set_xlabel("Temperature (K)")
     axes[1].set_ylabel("Max CMOD (A)")

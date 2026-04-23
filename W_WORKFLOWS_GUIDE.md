@@ -1,0 +1,204 @@
+# W Workflows Guide
+
+## Scope
+
+This guide documents the four independent pure-W mechanics workflows in Simulon:
+
+- `run_scripts/w_tensile.py`
+- `run_scripts/w_indent.py`
+- `run_scripts/w_crack.py`
+- `run_scripts/w_dbtt_scan.py`
+
+Each workflow can be run alone. The batch wrapper `run_scripts/w_batch_report.py` only orchestrates them; it does not couple their physics.
+
+## Output Structure
+
+Every workflow accepts `--output-dir`. Outputs are grouped by orientation underneath that root:
+
+- tensile: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
+- indentation: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
+- crack: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
+- dbtt: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/` with temperature subdirectories inside
+
+This layout is intentional so you can run one workflow, two workflows, or all workflows without file collisions.
+
+## Common Parameters
+
+These appear in more than one workflow.
+
+- `--orientation`
+  Physical meaning: crystal orientation used to generate the W BCC cell. Current supported values are `100`, `110`, and `111`.
+- `--replicas`
+  Physical meaning: supercell size along the three lattice vectors of the oriented cell. Larger values reduce size effects and boundary artifacts, but cost more GPU memory and wall time.
+- `--eam`
+  Physical meaning: EAM parameter file used for W interactions.
+- `--temperature`
+  Physical meaning: target thermostat temperature in K.
+- `--dt`
+  Physical meaning: MD time step in ps.
+- `--gamma`
+  Physical meaning: Langevin damping in `1/ps`. Larger values mean stronger thermostat coupling.
+- `--output-dir`
+  Engineering meaning: root directory where this workflow writes CSV, summary JSON, PNG, and generated structure files.
+- `--smoke`
+  Engineering meaning: small acceptance run. It is for code-path validation, not for publishable physics.
+
+## Tensile Parameters
+
+Script: `run_scripts/w_tensile.py`
+
+- `--strain-rate`
+  Physical meaning: engineering strain rate in `1/ps` along the loading axis.
+- `--lateral-mode`
+  Physical meaning:
+  `fixed`: lateral box lengths remain fixed.
+  `poisson`: lateral box lengths shrink with a prescribed Poisson ratio.
+  `stress-free`: lateral directions are controlled by anisotropic NPT.
+- `--poisson-ratio`
+  Physical meaning: kinematic lateral contraction ratio for `poisson` mode.
+- `--barostat-tau`
+  Physical meaning: pressure relaxation time for anisotropic NPT. Smaller values respond faster but can destabilize the run.
+- `--barostat-gamma`
+  Physical meaning: damping applied to the barostat degrees of freedom.
+
+### Tensile Report Fields
+
+- `stress_max_bar`
+  Peak axial stress.
+- `peak_strain`
+  Strain at peak axial stress.
+- `elastic_slope_bar`
+  Early-stage slope from the first few points. This is a quick stiffness proxy, not a rigorous elastic constant fit.
+- `final_stress_bar`
+  Stress at the last point.
+- `stress_drop_bar`
+  Difference between peak stress and final stress. Useful for identifying post-peak softening.
+- `mean_final_lateral_stress_bar`
+  Mean lateral stress near the end. Useful to judge how well `stress-free` loading released transverse stress.
+
+## Indentation Parameters
+
+Script: `run_scripts/w_indent.py`
+
+- `--vacuum-A`
+  Physical meaning: extra vacuum added normal to the free surface to avoid periodic-image contact above the slab.
+- `--bottom-thickness-A`
+  Physical meaning: thickness of the rigid bottom grip region. These atoms are held fixed.
+- `--equil-steps`
+  Physical meaning: NVT equilibration steps before indentation begins.
+- `--indenter-radius-A`
+  Physical meaning: spherical indenter radius in Angstrom.
+- `--indenter-stiffness`
+  Physical meaning: repulsive indenter stiffness in `eV/A^3`. Larger values approach a harder indenter.
+- `--initial-depth-A`
+  Physical meaning: initial effective indentation depth relative to the geometric contact reference. `0.0` means start at geometric first contact.
+- `--target-depth-A`
+  Physical meaning: target effective indentation depth.
+- `--indent-rate-A-ps`
+  Physical meaning: imposed indentation speed in `A/ps`. If omitted, it is inferred from `(target-depth - initial-depth) / (steps * dt)`.
+
+### Indentation Report Fields
+
+- `max_load_nN`
+  Maximum load during the run.
+- `peak_load_depth_A`
+  Depth where the load reaches its maximum.
+- `contact_onset_depth_A`
+  First depth where the load becomes nonzero.
+- `initial_loading_stiffness_nN_per_A`
+  Early loading slope after contact.
+- `max_contact_atoms`
+  Maximum number of atoms simultaneously inside the indenter interaction zone.
+
+## Crack Parameters
+
+Script: `run_scripts/w_crack.py`
+
+- `--vacuum-A`
+  Physical meaning: extra vacuum normal to the opening direction to avoid interactions across the free surfaces.
+- `--crack-half-length-A`
+  Physical meaning: half-length of the initial center crack.
+- `--crack-gap-A`
+  Physical meaning: opening thickness of the removed precrack strip.
+- `--grip-thickness-A`
+  Physical meaning: thickness of the rigid upper and lower grip regions used for displacement control.
+- `--equil-steps`
+  Physical meaning: NVT equilibration steps before the crack is opened.
+- `--target-strain`
+  Physical meaning: prescribed remote opening strain based on the gauge region.
+- `--opening-rate-A-ps`
+  Physical meaning: imposed crack-mouth opening rate in `A/ps`. If omitted, it is inferred from `target opening / (steps * dt)`.
+
+### Crack Report Fields
+
+- `peak_stress_magnitude_bar`
+  Maximum absolute opening stress magnitude during the run.
+- `cmod_at_peak_stress_A`
+  Crack-mouth opening displacement at the stress peak.
+- `max_cmod_A`
+  Largest crack-mouth opening displacement reached.
+- `stress_at_max_cmod_bar`
+  Stress when the maximum CMOD occurs.
+- `initial_cmod_slope_A_per_strain`
+  Early CMOD-versus-strain slope. This is a compliance proxy.
+
+## DBTT Scan Parameters
+
+Script: `run_scripts/w_dbtt_scan.py`
+
+This workflow repeatedly calls the crack workflow at multiple temperatures.
+
+- `--temperatures`
+  Physical meaning: comma-separated temperature list in K.
+- `--temperature-scale`
+  Engineering meaning: multiplier applied to every listed temperature. Useful when reusing a list under a systematic scaling study.
+- `--steps`, `--equil-steps`, `--dt`, `--gamma`
+  Same meanings as in the crack workflow.
+- `--crack-half-length-A`, `--crack-gap-A`, `--grip-thickness-A`, `--target-strain`, `--opening-rate-A-ps`
+  Same meanings as in the crack workflow.
+
+### DBTT Report Fields
+
+- `peak_stress_magnitude_bar`
+  Temperature dependence of peak opening-stress magnitude.
+- `max_cmod_A`
+  Temperature dependence of maximum crack opening.
+- `cmod_at_peak_stress_A`
+  Crack opening when the crack workflow reaches peak stress. Useful as a simple brittleness-versus-ductility proxy.
+
+## Batch Runner
+
+Script: `run_scripts/w_batch_report.py`
+
+Purpose: run any subset of the four workflows and produce a combined report.
+
+Key parameters:
+
+- `--workflows`
+  Example: `tensile,indent,crack,dbtt`
+- `--orientations`
+  Example: `100,110,111`
+- `--output-dir`
+  Root directory for all selected workflow outputs and the combined report.
+- `--replicas-100`, `--replicas-110`, `--replicas-111`
+  Orientation-specific supercell sizes shared by all selected workflows.
+
+### Batch Report Meaning
+
+The batch runner writes:
+
+- `batch_report.csv`
+  Flat table of key metrics, suitable for spreadsheets or quick filtering.
+- `batch_report.json`
+  Machine-readable version of the same information.
+- `batch_report.md`
+  Human-readable run index with the main metrics and file paths.
+
+This report is not a paper-ready analysis by itself. It is intended to organize large server sweeps and let you quickly identify which runs need closer inspection.
+
+## Practical Server Advice
+
+- Start with `--smoke` locally.
+- Increase `--replicas` before increasing loading rate if you see strong size artifacts.
+- Keep `--dt` conservative when using high strain rate, high opening rate, or a stiff indenter.
+- For DBTT or crack studies, use multiple temperatures and, eventually, multiple random seeds if you need trends robust enough for reporting.

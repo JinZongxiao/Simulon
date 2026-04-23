@@ -86,6 +86,7 @@ run_scripts/
   w_indent.py             # 钨纳米压痕工作流
   w_crack.py              # 钨裂纹开口工作流
   w_dbtt_scan.py          # 钨 DBTT 温度扫描
+  w_batch_report.py       # W 力学批量运行与汇总报告
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
@@ -318,6 +319,21 @@ python run_scripts/w_dbtt_scan.py \
 - `dbtt_summary.csv`
 - `dbtt_summary.json`
 - `dbtt_summary.png`
+
+### 10. 批量运行与参数说明
+
+用统一输出根目录批量跑四条工作流中的任意组合：
+
+```bash
+python run_scripts/w_batch_report.py \
+  --workflows tensile,indent,crack,dbtt \
+  --orientations 100,110,111 \
+  --output-dir run_output/w_batch_report
+```
+
+所有参数含义和报告字段说明见：
+
+- `W_WORKFLOWS_GUIDE.md`
 
 ---
 

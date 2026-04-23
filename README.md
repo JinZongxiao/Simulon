@@ -86,6 +86,7 @@ run_scripts/
   w_indent.py             # Tungsten nanoindentation workflow
   w_crack.py              # Tungsten crack-opening workflow
   w_dbtt_scan.py          # Tungsten DBTT temperature scan
+  w_batch_report.py       # Combined W workflow runner + report export
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
@@ -318,6 +319,21 @@ Outputs are written to `run_output/w_dbtt/` and include per-temperature crack ru
 - `dbtt_summary.csv`
 - `dbtt_summary.json`
 - `dbtt_summary.png`
+
+### 10. Batch report and parameter guide
+
+Run any subset of the four workflows with a unified output root:
+
+```bash
+python run_scripts/w_batch_report.py \
+  --workflows tensile,indent,crack,dbtt \
+  --orientations 100,110,111 \
+  --output-dir run_output/w_batch_report
+```
+
+Detailed parameter meanings and report-field definitions are documented in:
+
+- `W_WORKFLOWS_GUIDE.md`
 
 ---
 

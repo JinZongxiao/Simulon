@@ -19,11 +19,25 @@ def summarize_crack(csv_path: str | Path) -> dict:
     stresses = [float(row["stress_bar"]) for row in rows]
     cods = [float(row["cmod_A"]) for row in rows]
     temps = [float(row["temperature_k"]) for row in rows]
+    abs_stresses = [abs(value) for value in stresses]
+    peak_stress_idx = max(range(len(abs_stresses)), key=lambda i: abs_stresses[i])
+    peak_cmod_idx = max(range(len(cods)), key=lambda i: cods[i])
+    n_fit = min(5, len(strains))
+    if n_fit >= 2:
+        ds = strains[n_fit - 1] - strains[0]
+        cmod_slope = 0.0 if abs(ds) < 1.0e-12 else (cods[n_fit - 1] - cods[0]) / ds
+    else:
+        cmod_slope = 0.0
     return {
         "n_points": len(rows),
         "max_applied_strain": max(strains),
-        "max_stress_bar": max(stresses),
-        "max_cmod_A": max(cods),
+        "stress_min_bar": min(stresses),
+        "stress_max_bar": max(stresses),
+        "peak_stress_magnitude_bar": abs_stresses[peak_stress_idx],
+        "cmod_at_peak_stress_A": cods[peak_stress_idx],
+        "max_cmod_A": cods[peak_cmod_idx],
+        "stress_at_max_cmod_bar": stresses[peak_cmod_idx],
+        "initial_cmod_slope_A_per_strain": cmod_slope,
         "final_stress_bar": stresses[-1],
         "final_cmod_A": cods[-1],
         "mean_temperature_k": sum(temps) / len(temps),
