@@ -134,6 +134,7 @@ class AtomFileReader:
             return torch.tensor(param_values, device=self.device)
 
     def update_coordinates(self, coordinates):
+        coordinates = coordinates.detach()
         if self.last_positions is not None:
             displacement = self.box.minimum_image(coordinates - self.last_positions)
             max_displacement = torch.max(torch.norm(displacement, dim=1))
@@ -250,7 +251,7 @@ class AtomFileReader:
         return int(self.get_cutoff_mask().sum().item())
 
     def update_velocities(self, velocities):
-        self.atom_velocities = velocities
+        self.atom_velocities = velocities.detach()
 
     def read_file(self, filename):
         with open(filename, 'r') as file:
@@ -339,8 +340,7 @@ class AtomFileReader:
 
     def initialize_pyg_data(self, cutoff):
         atom_types_index = torch.tensor(list(range(0, len(self.atom_types))), device=self.device)
-        pos = self.coordinates
-        pos.requires_grad_(True)
+        pos = self.coordinates.detach()
         # edge_index, edge_attr = self.find_neighbors(pos, cutoff)
         edge_index, edge_attr = self.find_neighbors_kdtree(pos, cutoff)
         element_ids = torch.tensor(self.element_to_id, device=self.device)
