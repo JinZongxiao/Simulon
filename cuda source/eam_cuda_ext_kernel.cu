@@ -26,7 +26,7 @@ __global__ void density_pass_kernel(
     const int64_t* __restrict__ row_index,
     const int64_t* __restrict__ col_index,
     const int64_t* __restrict__ atom_types,
-    const float* __restrict__ density_table, // [E, n_r]
+    const float* __restrict__ density_table, // [host E, neighbor E, n_r]
     int E,
     float inv_dr,
     int n_r,
@@ -41,13 +41,13 @@ __global__ void density_pass_kernel(
     int i_type = (int)atom_types[i_atom];
     int j_type = (int)atom_types[j_atom];
 
-    // rho_i += f_{type_j}(r_ij)
-    const float* table_j = density_table + j_type * n_r;
+    // rho_i += f_{type_i,type_j}(r_ij)
+    const float* table_j = density_table + (i_type * E + j_type) * n_r;
     float val_j_to_i = lerp_table(r, inv_dr, n_r, table_j);
     atomicAdd(rho_out + i_atom, val_j_to_i);
 
-    // rho_j += f_{type_i}(r_ij)   ← 原版缺失
-    const float* table_i = density_table + i_type * n_r;
+    // rho_j += f_{type_j,type_i}(r_ij)
+    const float* table_i = density_table + (j_type * E + i_type) * n_r;
     float val_i_to_j = lerp_table(r, inv_dr, n_r, table_i);
     atomicAdd(rho_out + j_atom, val_i_to_j);
 }
@@ -57,14 +57,16 @@ __global__ void density_pass_kernel(
 //   - 对 single-element 系统，df_i = df_j 恰好正确
 //   - 对 multi-element 合金 (df_i ≠ df_j) 会产生系统性偏差
 // 正确公式：
-//   f_scalar = dF_i/drho_i · df_{type_j}/dr  +  dF_j/drho_j · df_{type_i}/dr  +  dphi_{ij}/dr
+//   f_scalar = dF_i/drho_i · df_{type_i,type_j}/dr
+//            + dF_j/drho_j · df_{type_j,type_i}/dr
+//            + dphi_{ij}/dr
 __global__ void force_pass_kernel(
     const float* __restrict__ distances,
     const float* __restrict__ dist_vec, // [n_pairs,3]
     const int64_t* __restrict__ row_index,
     const int64_t* __restrict__ col_index,
     const int64_t* __restrict__ atom_types,
-    const float* __restrict__ density_deriv_table, // [E,n_r]
+    const float* __restrict__ density_deriv_table, // [host E, neighbor E, n_r]
     const float* __restrict__ pair_deriv_table,    // [E,E,n_r]
     const float* __restrict__ dF_drho,             // [N]
     float inv_dr,
@@ -82,20 +84,20 @@ __global__ void force_pass_kernel(
     int i_type = (int)atom_types[i_atom];
     int j_type = (int)atom_types[j_atom];
 
-    // df_{type_j}(r)/dr —— j 原子密度函数的 r 导数（用于 dF_i/drho_i 项）
-    const float* dens_deriv_j = density_deriv_table + j_type * n_r;
-    float df_j_dr = lerp_table(r, inv_dr, n_r, dens_deriv_j);
+    // df_{type_i,type_j}(r)/dr —— j neighbor contribution to rho_i
+    const float* dens_deriv_j_to_i = density_deriv_table + (i_type * E + j_type) * n_r;
+    float df_j_to_i_dr = lerp_table(r, inv_dr, n_r, dens_deriv_j_to_i);
 
-    // df_{type_i}(r)/dr —— i 原子密度函数的 r 导数（用于 dF_j/drho_j 项，原版缺失）
-    const float* dens_deriv_i = density_deriv_table + i_type * n_r;
-    float df_i_dr = lerp_table(r, inv_dr, n_r, dens_deriv_i);
+    // df_{type_j,type_i}(r)/dr —— i neighbor contribution to rho_j
+    const float* dens_deriv_i_to_j = density_deriv_table + (j_type * E + i_type) * n_r;
+    float df_i_to_j_dr = lerp_table(r, inv_dr, n_r, dens_deriv_i_to_j);
 
     // dphi_{ij}(r)/dr
     const float* pair_deriv_ij = pair_deriv_table + ( (i_type * E + j_type) * n_r );
     float dphi_dr = lerp_table(r, inv_dr, n_r, pair_deriv_ij);
 
-    float scalar = dF_drho[i_atom] * df_j_dr
-                 + dF_drho[j_atom] * df_i_dr
+    float scalar = dF_drho[i_atom] * df_j_to_i_dr
+                 + dF_drho[j_atom] * df_i_to_j_dr
                  + dphi_dr;
 
     const float* rij = dist_vec + 3*idx;

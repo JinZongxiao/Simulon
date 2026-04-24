@@ -43,10 +43,16 @@ class BerendsenBarostat:
     ) -> float:
         mol = self.molecular
         V = self._volume()
-        P_ev_ang3 = (2.0 * kinetic_energy + virial) / (3.0 * V)
+        if kinetic_tensor is not None and virial_tensor is not None:
+            stress_tensor = (kinetic_tensor.to(torch.float64) + virial_tensor.to(torch.float64)) / V
+            P_ev_ang3 = torch.trace(stress_tensor) / 3.0
+        else:
+            P_ev_ang3 = (2.0 * kinetic_energy + virial) / (3.0 * V)
         P_inst = float(P_ev_ang3) * _EV_ANG3_TO_BAR
 
-        mu3 = 1.0 - self.kappa * (dt / self.tau_p) * (P_inst - self.target_P)
+        # Positive pressure in the W workflow stress convention is
+        # compressive, so positive mismatch should expand the cell.
+        mu3 = 1.0 + self.kappa * (dt / self.tau_p) * (P_inst - self.target_P)
         mu3 = max(mu3, (1.0 - self.mu_max) ** 3)
         mu3 = min(mu3, (1.0 + self.mu_max) ** 3)
         mu = mu3 ** (1.0 / 3.0)
@@ -147,7 +153,11 @@ class AnisotropicNPTBarostat:
         within_tol = torch.abs(delta_p_bar) <= self.pressure_tolerance_bar
         delta_p_eff_bar = torch.where(within_tol, torch.zeros_like(delta_p_bar), delta_p_bar)
 
-        accel = -self.compressibility_bar_inv * delta_p_eff_bar / max(self.tau_p ** 2, 1e-12)
+        # p_axis_bar follows the virial-stress convention used by the W
+        # workflows: positive means the cell is compressively stressed. The
+        # barostat should therefore expand a positive-stress axis and contract
+        # a negative-stress axis.
+        accel = self.compressibility_bar_inv * delta_p_eff_bar / max(self.tau_p ** 2, 1e-12)
         if self.gamma_p > 0.0:
             accel = accel - self.gamma_p * self.eta_dot
         if self.stochastic:

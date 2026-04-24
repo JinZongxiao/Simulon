@@ -64,7 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-dir", default=str(out_default))
     p.add_argument("--box-length", type=float, default=16.0)
     p.add_argument("--orientation", choices=("100", "110", "111", "custom"), default="100")
-    p.add_argument("--lattice-param", type=float, default=3.2)
+    p.add_argument("--lattice-param", type=float, default=3.1652)
     p.add_argument("--replicas", default=None, help="supercell replicas as nx,ny,nz for generated structures")
     p.add_argument("--steps", type=int, default=200)
     p.add_argument("--equil-steps", type=int, default=1000)
@@ -306,10 +306,10 @@ def run_w_tensile(args) -> dict:
                 0.0,
                 0.0,
                 0.0,
-                float(baseline_abs[0]),
-                float(baseline_abs[0]),
-                float(baseline_abs[1]),
-                float(baseline_abs[2]),
+                float(-baseline_abs[0]),
+                float(-baseline_abs[0]),
+                float(-baseline_abs[1]),
+                float(-baseline_abs[2]),
                 0.0,
                 0.0,
                 0.0,
@@ -345,8 +345,10 @@ def run_w_tensile(args) -> dict:
             sigma_tensor_bar = ((kinetic_tensor + virial_tensor) / volume) * _EV_ANG3_TO_BAR
             stress_axis_abs = _project_to_lattice_axes(sigma_tensor_bar, mol.box)
             stress_axis_bar = stress_axis_abs - baseline_abs.to(stress_axis_abs)
-            tension_axis_abs = stress_axis_abs
-            tension_axis_bar = stress_axis_bar
+            # Native virial stress is compression-positive here. Keep stress_*
+            # in that native convention and expose tension_* as tensile-positive.
+            tension_axis_abs = -stress_axis_abs
+            tension_axis_bar = -stress_axis_bar
 
             pot = float(out["energy"])
             kin = float(out["kinetic_energy"])

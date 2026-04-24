@@ -6,7 +6,7 @@ void density_pass_cuda(
     const torch::Tensor row_index,
     const torch::Tensor col_index,
     const torch::Tensor atom_types,
-    const torch::Tensor density_table, // [E, n_r]
+    const torch::Tensor density_table, // [host E, neighbor E, n_r]
     const float inv_dr,
     const int n_r,
     torch::Tensor rho_out
@@ -18,7 +18,7 @@ void force_pass_cuda(
     const torch::Tensor row_index,
     const torch::Tensor col_index,
     const torch::Tensor atom_types,
-    const torch::Tensor density_deriv_table, // [E, n_r]
+    const torch::Tensor density_deriv_table, // [host E, neighbor E, n_r]
     const torch::Tensor pair_deriv_table,    // [E, E, n_r]
     const torch::Tensor dF_drho,             // [N]
     const float inv_dr,

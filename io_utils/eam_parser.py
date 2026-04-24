@@ -116,28 +116,17 @@ class EAMParser:
         self.cutoff = float(params_line_2[4])
         line_idx += 1
 
-        # Check if we have element-specific header lines
-        # Some .eam.fs files have one line per element, others have just one line for all
-        element_header_lines = 0
-        for i in range(min(n_elements, 5)):  # Check at most 5 lines
-            test_line = lines[line_idx + i].strip()
-            # Check if line contains non-scientific notation letters (not E+ or E-)
-            if test_line and any(c.isalpha() and c not in 'Ee+-' for c in test_line):
-                element_header_lines += 1
-            else:
-                break
-        
-        # Skip the detected element header lines
-        line_idx += element_header_lines
-
         self.embedding_splines = {}
         self.embedding_deriv_splines = {}
         self.density_splines = {}
         self.density_deriv_splines = {}
+        self.density_splines_by_pair = defaultdict(dict)
+        self.density_deriv_splines_by_pair = defaultdict(dict)
         self.pair_potential_splines = defaultdict(dict)
         self.pair_potential_deriv_splines = defaultdict(dict)
 
-        # Read numerical data from remaining lines
+        # Element header lines contain text such as "bcc"/"hcp"; skip them
+        # wherever they occur and flatten only tabulated numeric values.
         all_data = []
         for line in lines[line_idx:]:
             line = line.strip()
@@ -148,30 +137,53 @@ class EAMParser:
                 except ValueError:
                     # Skip lines that can't be converted to float
                     continue
-        
+
+        expected_alloy = n_elements * (self.n_rho + self.n_r) + (n_elements * (n_elements + 1) // 2) * self.n_r
+        expected_fs = n_elements * (self.n_rho + n_elements * self.n_r) + (n_elements * (n_elements + 1) // 2) * self.n_r
+        self.is_fs_format = (
+            self.filepath.lower().endswith(".eam.fs")
+            or any("eam.fs" in line.lower() for line in lines[:3])
+            or (len(all_data) >= expected_fs and len(all_data) - expected_alloy >= n_elements * (n_elements - 1) * self.n_r)
+        )
+
         data_ptr = 0
 
-        for i in range(n_elements):            
+        for beta in range(n_elements):
             # Embedding function F(rho)
             if data_ptr + self.n_rho > len(all_data):
                 raise ValueError(f"嵌入函数数据不足: 需要 {self.n_rho} 点，但只有 {len(all_data) - data_ptr} 点可用")
-            
+
             embedding_data = np.array(all_data[data_ptr : data_ptr + self.n_rho])
             data_ptr += self.n_rho
             rho_values = np.arange(self.n_rho) * self.d_rho
-            
-            self.embedding_splines[i] = CubicSpline(rho_values, embedding_data, bc_type='not-a-knot')
-            self.embedding_deriv_splines[i] = self.embedding_splines[i].derivative(1)
 
-            # Electron density function f(r)
-            if data_ptr + self.n_r > len(all_data):
-                raise ValueError(f"电子密度函数数据不足: 需要 {self.n_r} 点，但只有 {len(all_data) - data_ptr} 点可用")
-                
-            density_data = np.array(all_data[data_ptr : data_ptr + self.n_r])
-            data_ptr += self.n_r
+            self.embedding_splines[beta] = CubicSpline(rho_values, embedding_data, bc_type='not-a-knot')
+            self.embedding_deriv_splines[beta] = self.embedding_splines[beta].derivative(1)
+
             r_values = np.arange(self.n_r) * self.d_r
-            self.density_splines[i] = CubicSpline(r_values, density_data, bc_type='not-a-knot')
-            self.density_deriv_splines[i] = self.density_splines[i].derivative(1)
+            if self.is_fs_format:
+                for alpha in range(n_elements):
+                    if data_ptr + self.n_r > len(all_data):
+                        raise ValueError(f"FS 电子密度函数数据不足: 需要 {self.n_r} 点，但只有 {len(all_data) - data_ptr} 点可用")
+                    density_data = np.array(all_data[data_ptr : data_ptr + self.n_r])
+                    data_ptr += self.n_r
+                    spline = CubicSpline(r_values, density_data, bc_type='not-a-knot')
+                    self.density_splines_by_pair[alpha][beta] = spline
+                    self.density_deriv_splines_by_pair[alpha][beta] = spline.derivative(1)
+                self.density_splines[beta] = self.density_splines_by_pair[beta][beta]
+                self.density_deriv_splines[beta] = self.density_deriv_splines_by_pair[beta][beta]
+            else:
+                # EAM/alloy has one neighbor-element density function f_beta(r).
+                if data_ptr + self.n_r > len(all_data):
+                    raise ValueError(f"电子密度函数数据不足: 需要 {self.n_r} 点，但只有 {len(all_data) - data_ptr} 点可用")
+                density_data = np.array(all_data[data_ptr : data_ptr + self.n_r])
+                data_ptr += self.n_r
+                spline = CubicSpline(r_values, density_data, bc_type='not-a-knot')
+                self.density_splines[beta] = spline
+                self.density_deriv_splines[beta] = spline.derivative(1)
+                for alpha in range(n_elements):
+                    self.density_splines_by_pair[alpha][beta] = spline
+                    self.density_deriv_splines_by_pair[alpha][beta] = spline.derivative(1)
 
         # Read pair potentials phi_ij(r)
         r_values = np.arange(self.n_r) * self.d_r

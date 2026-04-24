@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import torch
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from run_scripts.w_tensile import _build_parser, run_w_tensile
@@ -17,15 +19,31 @@ def _read_rows(csv_path: str):
 
 
 def main():
+    torch.manual_seed(1234)
     default_out = Path(__file__).resolve().parents[1] / "run_output" / "smoke_w_tensile"
     parser = _build_parser()
     args = parser.parse_args(
         [
-            "--smoke",
+            "--orientation",
+            "100",
+            "--replicas",
+            "6,6,6",
+            "--lattice-param",
+            "3.1652",
             "--steps",
-            "20",
+            "100",
+            "--equil-steps",
+            "2000",
+            "--strain-rate",
+            "0.005",
+            "--lateral-mode",
+            "stress-free",
+            "--barostat-pressure-tolerance-bar",
+            "100.0",
+            "--max-initial-stress-bar",
+            "10000",
             "--print-interval",
-            "5",
+            "50",
             "--output-dir",
             str(default_out),
         ]
@@ -36,10 +54,14 @@ def main():
 
     strains = [float(row["strain"]) for row in rows]
     stresses = [float(row["stress_xx_bar"]) for row in rows]
+    tensions = [float(row["tension_xx_bar"]) for row in rows]
     temps = [float(row["temperature_k"]) for row in rows]
 
     assert all(strains[i] >= strains[i - 1] for i in range(1, len(strains))), "strain must be monotonic"
     assert all(value == value for value in stresses), "stress contains NaN"
+    assert all(value == value for value in tensions), "tension contains NaN"
+    assert all(abs(t + s) < 1.0e-4 for t, s in zip(tensions, stresses)), "tension_xx_bar must be tensile-positive"
+    assert tensions[-1] > tensions[0], "short tensile smoke should increase axial tension"
     assert all(value == value for value in temps), "temperature contains NaN"
     assert max(abs(s) for s in stresses) > 0.0, "stress should not be identically zero"
     assert result["n_points"] == len(rows), "summary point count mismatch"

@@ -67,7 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--eam", default=str(eam_default))
     p.add_argument("--output-dir", default=str(out_default))
     p.add_argument("--orientation", choices=("100", "110", "111", "all"), default="all")
-    p.add_argument("--lattice-param", type=float, default=3.2)
+    p.add_argument("--lattice-param", type=float, default=3.1652)
     p.add_argument("--replicas", default=None, help="replicas as nx,ny,nz; default depends on orientation")
     p.add_argument("--skin-thickness", type=float, default=1.0)
     p.add_argument("--max-force-threshold", type=float, default=5.0, help="eV/Angstrom")

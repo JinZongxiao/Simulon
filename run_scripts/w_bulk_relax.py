@@ -107,7 +107,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-dir", default=str(out_default))
     p.add_argument("--box-length", type=float, default=16.0)
     p.add_argument("--orientation", choices=("100", "110", "111", "custom"), default="100")
-    p.add_argument("--lattice-param", type=float, default=3.2)
+    p.add_argument("--lattice-param", type=float, default=3.1652)
     p.add_argument("--replicas", default=None, help="supercell replicas as nx,ny,nz for generated structures")
     p.add_argument("--steps", type=int, default=5000)
     p.add_argument("--dt", type=float, default=0.001)

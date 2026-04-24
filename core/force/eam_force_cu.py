@@ -347,12 +347,16 @@ class EAMForceCUDAExt(nn.Module):
             self.embed_n = {}
             self.embed_table = {}
             self.embed_deriv_table = {}
-            for i in range(self.E):
-                # f_i(r)
-                f_i = self._spline_eval(self.parser.density_splines[i], r_grid)
-                df_i = self._spline_eval(self.parser.density_deriv_splines[i], r_grid)
-                density_table.append(f_i)
-                density_deriv_table.append(df_i)
+            for host_type in range(self.E):
+                density_row = []
+                density_deriv_row = []
+                for neighbor_type in range(self.E):
+                    density_spline = self.parser.density_splines_by_pair[host_type][neighbor_type]
+                    density_deriv_spline = self.parser.density_deriv_splines_by_pair[host_type][neighbor_type]
+                    density_row.append(self._spline_eval(density_spline, r_grid))
+                    density_deriv_row.append(self._spline_eval(density_deriv_spline, r_grid))
+                density_table.append(torch.stack(density_row))
+                density_deriv_table.append(torch.stack(density_deriv_row))
             for i in range(self.E):
                 row_phi = []
                 row_dphi = []
@@ -368,8 +372,8 @@ class EAMForceCUDAExt(nn.Module):
                 pair_table.append(torch.stack(row_phi))  # [E, n_r]
                 pair_deriv_table.append(torch.stack(row_dphi))
             self.r_grid = r_grid
-            self.density_table = torch.stack(density_table)            # [E, n_r]
-            self.density_deriv_table = torch.stack(density_deriv_table) # [E, n_r]
+            self.density_table = torch.stack(density_table)            # [host E, neighbor E, n_r]
+            self.density_deriv_table = torch.stack(density_deriv_table) # [host E, neighbor E, n_r]
             self.pair_table = torch.stack(pair_table)                   # [E, E, n_r]
             self.pair_deriv_table = torch.stack(pair_deriv_table)       # [E, E, n_r]
             for i in range(self.E):
@@ -495,20 +499,21 @@ class EAMForceCUDAExt(nn.Module):
             getattr(self.ext_mod, self._density_fn_name)(
                 distances, row_m, col_m,
                 self.atom_type_indices,
-                self.density_table, # [E,n_r]
+                self.density_table, # [host E, neighbor E, n_r]
                 self.inv_dr, self.n_r,
                 rho
             )
         else:
-            for atom_type in range(self.E):
-                mask_col = (col_types == atom_type)
-                if mask_col.any():
-                    vals = self._interp_r(distances[mask_col], self.density_table[atom_type])
-                    rho.scatter_add_(0, row_m[mask_col], vals)
-                mask_row = (row_types == atom_type)
-                if mask_row.any():
-                    vals = self._interp_r(distances[mask_row], self.density_table[atom_type])
-                    rho.scatter_add_(0, col_m[mask_row], vals)
+            for host_type in range(self.E):
+                for neighbor_type in range(self.E):
+                    mask_row_host = (row_types == host_type) & (col_types == neighbor_type)
+                    if mask_row_host.any():
+                        vals = self._interp_r(distances[mask_row_host], self.density_table[host_type, neighbor_type])
+                        rho.scatter_add_(0, row_m[mask_row_host], vals)
+                    mask_col_host = (col_types == host_type) & (row_types == neighbor_type)
+                    if mask_col_host.any():
+                        vals = self._interp_r(distances[mask_col_host], self.density_table[host_type, neighbor_type])
+                        rho.scatter_add_(0, col_m[mask_col_host], vals)
         embedding_energy = torch.zeros_like(rho)
         dF_drho = torch.zeros_like(rho)
         for i_type in range(self.E):
@@ -535,8 +540,8 @@ class EAMForceCUDAExt(nn.Module):
                 sel = (row_types == i_type) & (col_types == j_type)
                 if sel.any():
                     r_sel = distances[sel]
-                    d_density_dr_row[sel] = self._interp_r(r_sel, self.density_deriv_table[i_type])
-                    d_density_dr_col[sel] = self._interp_r(r_sel, self.density_deriv_table[j_type])
+                    d_density_dr_row[sel] = self._interp_r(r_sel, self.density_deriv_table[j_type, i_type])
+                    d_density_dr_col[sel] = self._interp_r(r_sel, self.density_deriv_table[i_type, j_type])
                     d_pair_dr[sel] = self._interp_r(r_sel, self.pair_deriv_table[i_type, j_type])
         force_scalar = (
             dF_drho[row_m] * d_density_dr_col
