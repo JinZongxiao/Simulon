@@ -17,6 +17,10 @@ def collect_dbtt_rows(root_dir: str | Path) -> list[dict]:
         stress_max = data.get("max_stress_bar", data.get("stress_max_bar"))
         if stress_max is None or "max_cmod_A" not in data or "temperature_k" not in data:
             continue
+        stress_drop_ratio = float(data.get("stress_drop_ratio", 0.0))
+        max_cmod_A = float(data["max_cmod_A"])
+        peak_at_final = bool(data.get("peak_stress_at_final_step", True))
+        acceptance_pass = stress_drop_ratio > 0.1 and max_cmod_A > 1.0 and not peak_at_final
         rows.append(
             {
                 "orientation": str(data.get("orientation", "unknown")),
@@ -32,8 +36,14 @@ def collect_dbtt_rows(root_dir: str | Path) -> list[dict]:
                     data.get("peak_stress_magnitude_bar", abs(float(stress_max)))
                 ),
                 "final_stress_bar": float(data.get("final_stress_bar", 0.0)),
-                "max_cmod_A": float(data["max_cmod_A"]),
+                "stress_drop_ratio": stress_drop_ratio,
+                "max_cmod_A": max_cmod_A,
                 "final_cmod_A": float(data.get("final_cmod_A", 0.0)),
+                "max_crack_length_A": float(data.get("max_crack_length_A", 0.0)),
+                "max_crack_extension_A": float(data.get("max_crack_extension_A", 0.0)),
+                "peak_stress_step": int(data.get("peak_stress_step", 0)),
+                "peak_stress_at_final_step": peak_at_final,
+                "acceptance_pass": acceptance_pass,
                 "max_applied_strain": float(data.get("max_applied_strain", 0.0)),
                 "cmod_at_peak_stress_A": float(data.get("cmod_at_peak_stress_A", 0.0)),
                 "stress_retention_ratio": float(
@@ -61,8 +71,14 @@ def write_dbtt_csv(rows: list[dict], csv_path: str | Path) -> str:
         "peak_tensile_stress_bar",
         "peak_stress_magnitude_bar",
         "final_stress_bar",
+        "stress_drop_ratio",
         "max_cmod_A",
         "final_cmod_A",
+        "max_crack_length_A",
+        "max_crack_extension_A",
+        "peak_stress_step",
+        "peak_stress_at_final_step",
+        "acceptance_pass",
         "max_applied_strain",
         "cmod_at_peak_stress_A",
         "stress_retention_ratio",
@@ -82,11 +98,15 @@ def summarize_dbtt(rows: list[dict]) -> dict:
         return {"n_runs": 0}
     orientations = sorted({row["orientation"] for row in rows})
     temps = [row["temperature_k"] for row in rows]
+    passing_rows = [row for row in rows if row.get("acceptance_pass")]
+    candidate_temp = min((row["temperature_k"] for row in passing_rows), default=None)
     return {
         "n_runs": len(rows),
         "orientations": orientations,
         "min_temperature_k": min(temps),
         "max_temperature_k": max(temps),
+        "n_acceptance_pass": len(passing_rows),
+        "dbtt_candidate_temperature_k": candidate_temp,
     }
 
 
@@ -105,10 +125,10 @@ def plot_dbtt(rows: list[dict], output_path: str | Path) -> str:
         temps = [row["temperature_k"] for row in ori_rows]
         final_stress = [row["final_stress_bar"] for row in ori_rows]
         max_cmod = [row["max_cmod_A"] for row in ori_rows]
-        retention = [row["stress_retention_ratio"] for row in ori_rows]
+        stress_drop = [row["stress_drop_ratio"] for row in ori_rows]
         axes[0].plot(temps, final_stress, marker="o", linewidth=1.8, label=orientation)
         axes[1].plot(temps, max_cmod, marker="o", linewidth=1.8, label=orientation)
-        axes[2].plot(temps, retention, marker="o", linewidth=1.8, label=orientation)
+        axes[2].plot(temps, stress_drop, marker="o", linewidth=1.8, label=orientation)
 
     axes[0].set_xlabel("Temperature (K)")
     axes[0].set_ylabel("Final opening stress, tension positive (bar)")
@@ -117,7 +137,7 @@ def plot_dbtt(rows: list[dict], output_path: str | Path) -> str:
     axes[1].set_ylabel("Max CMOD (A)")
     axes[1].grid(True, alpha=0.3)
     axes[2].set_xlabel("Temperature (K)")
-    axes[2].set_ylabel("Stress retention ratio")
+    axes[2].set_ylabel("Stress drop ratio")
     axes[2].grid(True, alpha=0.3)
     if by_orientation:
         axes[0].legend()

@@ -38,6 +38,7 @@ def main():
     strains = [float(row["applied_strain"]) for row in rows]
     cods = [float(row["cmod_A"]) for row in rows]
     stresses = [float(row["stress_bar"]) for row in rows]
+    crack_lengths = [float(row["crack_length_A"]) for row in rows]
     temps = [float(row["temperature_k"]) for row in rows]
 
     assert all(strains[i] >= strains[i - 1] for i in range(1, len(strains))), "strain must be monotonic"
@@ -46,8 +47,11 @@ def main():
     assert all(value == value for value in temps), "temperature contains NaN"
     assert max(cods) > 0.0, "CMOD should become positive"
     assert max(stresses) > 0.0, "crack opening stress should be positive in the reported tension-positive convention"
+    assert max(crack_lengths) > 0.0, "estimated crack length should be positive"
     assert result["n_points"] == len(rows), "summary point count mismatch"
     assert result.get("stress_sign_convention") == "stress_bar is tension-positive"
+    assert "stress_drop_ratio" in result, "summary must report stress drop ratio"
+    assert "max_crack_length_A" in result, "summary must report estimated crack length"
     assert Path(result["plot"]).exists(), "crack response plot must exist"
     print("W crack smoke test passed.")
 

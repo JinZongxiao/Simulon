@@ -276,17 +276,29 @@ Script: `run_scripts/w_crack.py`
   Physical meaning: prescribed remote opening strain based on the gauge region.
 - `--opening-rate-A-ps`
   Physical meaning: imposed crack-mouth opening rate in `A/ps`. If omitted, it is inferred from `target opening / (steps * dt)`.
+- `--crack-open-threshold-A`
+  Physical meaning: local upper-lower crack-plane separation used to classify a bin as open for crack-length tracking.
+- `--crack-length-bins`
+  Engineering meaning: number of bins along the crack direction used for estimated crack-length tracking.
 
 ### Crack Report Fields
 
 - `stress_bar`
   Opening stress using the tension-positive convention. The raw internal compression-positive virial sign is also written as `native_stress_yy_bar`.
+- `stress_drop_ratio`
+  `(peak_tensile_stress_bar - final_stress_bar) / peak_tensile_stress_bar`. Values above about `0.1` indicate visible post-peak load drop.
 - `peak_stress_magnitude_bar`
   Peak opening tensile stress during the run. Kept under this historical field name for DBTT compatibility.
+- `peak_stress_at_final_step`
+  Boolean flag for whether the peak stress occurs at the final recorded point. If true, the case has not yet shown post-peak unloading.
 - `cmod_at_peak_stress_A`
   Crack-mouth opening displacement at the stress peak.
 - `max_cmod_A`
   Largest crack-mouth opening displacement reached.
+- `max_crack_length_A`
+  Estimated length of the connected opened crack region.
+- `max_crack_extension_A`
+  Estimated crack extension beyond the initial slit length.
 - `stress_at_max_cmod_bar`
   Stress when the maximum CMOD occurs.
 - `initial_cmod_slope_A_per_strain`

@@ -72,6 +72,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gamma", type=float, default=2.0)
     p.add_argument("--target-strain", type=float, default=0.02)
     p.add_argument("--opening-rate-A-ps", type=float, default=None)
+    p.add_argument("--crack-open-threshold-A", type=float, default=1.0)
+    p.add_argument("--crack-length-bins", type=int, default=160)
     p.add_argument("--print-interval", type=int, default=50)
     p.add_argument("--traj-interval", type=int, default=0)
     p.add_argument("--smoke", action="store_true")
@@ -131,6 +133,61 @@ def _select_mouth_groups(vx, vy, x_center: float, y_center: float, crack_half_le
     raise ValueError("failed to find crack-mouth atoms; increase replicas or crack size")
 
 
+def _estimate_crack_length(
+    coords: torch.Tensor,
+    x_unit: torch.Tensor,
+    y_unit: torch.Tensor,
+    crack_plane_y: float,
+    x_min: float,
+    x_max: float,
+    x_center: float,
+    initial_half_length: float,
+    open_threshold_A: float,
+    bins: int,
+) -> tuple[float, float]:
+    bins = max(8, int(bins))
+    span = max(1.0e-12, float(x_max - x_min))
+    vx = coords @ x_unit
+    vy = coords @ y_unit
+    bin_index = torch.floor((vx - float(x_min)) / span * bins).to(torch.long).clamp(0, bins - 1)
+
+    upper = vy > float(crack_plane_y)
+    lower = vy < float(crack_plane_y)
+    inf = torch.tensor(float("inf"), device=coords.device, dtype=coords.dtype)
+    upper_min = torch.full((bins,), inf, device=coords.device, dtype=coords.dtype)
+    lower_max = torch.full((bins,), -inf, device=coords.device, dtype=coords.dtype)
+    if bool(upper.any().item()):
+        upper_min.scatter_reduce_(0, bin_index[upper], vy[upper], reduce="amin", include_self=True)
+    if bool(lower.any().item()):
+        lower_max.scatter_reduce_(0, bin_index[lower], vy[lower], reduce="amax", include_self=True)
+
+    gap = upper_min - lower_max
+    open_bins = (gap >= float(open_threshold_A)) & torch.isfinite(gap)
+    if not bool(open_bins.any().item()):
+        return 0.0, 0.0
+
+    width = span / bins
+    centers = float(x_min) + (torch.arange(bins, device=coords.device, dtype=coords.dtype) + 0.5) * width
+    initial_region = (centers >= float(x_center - initial_half_length)) & (
+        centers <= float(x_center + initial_half_length)
+    )
+    seeds = torch.nonzero(open_bins & initial_region, as_tuple=False).flatten()
+    if seeds.numel() == 0:
+        return 0.0, 0.0
+
+    open_cpu = open_bins.detach().cpu().tolist()
+    left = int(seeds.min().item())
+    right = int(seeds.max().item())
+    while left > 0 and open_cpu[left - 1]:
+        left -= 1
+    while right < bins - 1 and open_cpu[right + 1]:
+        right += 1
+
+    crack_length = (right - left + 1) * width
+    crack_extension = max(0.0, crack_length - 2.0 * float(initial_half_length))
+    return float(crack_length), float(crack_extension)
+
+
 def _write_traj_frame(path: Path, coords: torch.Tensor, atom_types: list[str], comment: str) -> None:
     with open(path, "a", encoding="utf-8") as f:
         f.write(f"{coords.shape[0]}\n")
@@ -155,6 +212,7 @@ def run_w_crack(args) -> dict:
         if args.replicas is None:
             args.replicas = "4,4,3"
         args.crack_half_length_A = min(args.crack_half_length_A, 4.5)
+        args.crack_length_bins = min(int(args.crack_length_bins), 64)
 
     parser = EAMParser(filepath=args.eam, device=device)
     if args.orientation == "custom":
@@ -208,6 +266,8 @@ def run_w_crack(args) -> dict:
     y_unit = _axis_unit(mol.box.H, 1, device, mol.coordinates.dtype)
     vx = mol.coordinates @ x_unit
     vy = mol.coordinates @ y_unit
+    x_min_current = float(vx.min().item())
+    x_max_current = float(vx.max().item())
     bottom = float(vy.min().item())
     top = float(vy.max().item())
     x_center = 0.5 * float(vx.min().item() + vx.max().item())
@@ -262,7 +322,27 @@ def run_w_crack(args) -> dict:
     if int(args.traj_interval) > 0:
         if traj_path.exists():
             traj_path.unlink()
-        _write_traj_frame(traj_path, mol.coordinates, mol.atom_types, "step=0 strain=0.000000 cmod=0.000000")
+        initial_crack_length, initial_crack_extension = _estimate_crack_length(
+            mol.coordinates,
+            x_unit,
+            y_unit,
+            y_center,
+            x_min_current,
+            x_max_current,
+            x_center,
+            float(args.crack_half_length_A),
+            float(args.crack_open_threshold_A),
+            int(args.crack_length_bins),
+        )
+        _write_traj_frame(
+            traj_path,
+            mol.coordinates,
+            mol.atom_types,
+            (
+                "step=0 strain=0.000000 cmod=0.000000 "
+                f"crack_length={initial_crack_length:.6f} crack_extension={initial_crack_extension:.6f}"
+            ),
+        )
 
     csv_path = output_dir / "crack_response.csv"
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
@@ -276,6 +356,8 @@ def run_w_crack(args) -> dict:
                 "native_stress_yy_bar",
                 "cmod_A",
                 "signed_cmod_A",
+                "crack_length_A",
+                "crack_extension_A",
                 "potential_energy_ev",
                 "kinetic_energy_ev",
                 "total_energy_ev",
@@ -303,6 +385,18 @@ def run_w_crack(args) -> dict:
             vy_now = mol.coordinates @ y_unit
             signed_cmod = float((vy_now[upper_mouth].mean() - vy_now[lower_mouth].mean()).item() - initial_cmod)
             cmod = abs(signed_cmod)
+            crack_length, crack_extension = _estimate_crack_length(
+                mol.coordinates,
+                x_unit,
+                y_unit,
+                y_center,
+                x_min_current,
+                x_max_current,
+                x_center,
+                float(args.crack_half_length_A),
+                float(args.crack_open_threshold_A),
+                int(args.crack_length_bins),
+            )
             total = float(out["energy"].item() + out["kinetic_energy"].item())
             lengths = mol.box.lengths.detach().cpu()
 
@@ -315,6 +409,8 @@ def run_w_crack(args) -> dict:
                     native_stress_yy_bar,
                     cmod,
                     signed_cmod,
+                    crack_length,
+                    crack_extension,
                     float(out["energy"].item()),
                     float(out["kinetic_energy"].item()),
                     total,
@@ -330,14 +426,17 @@ def run_w_crack(args) -> dict:
                     traj_path,
                     mol.coordinates,
                     mol.atom_types,
-                    f"step={step + 1} strain={opening / gauge_length:.6f} cmod={cmod:.6f}",
+                    (
+                        f"step={step + 1} strain={opening / gauge_length:.6f} cmod={cmod:.6f} "
+                        f"crack_length={crack_length:.6f} crack_extension={crack_extension:.6f}"
+                    ),
                 )
 
             if (step + 1) % max(1, args.print_interval) == 0:
                 print(
                     f"Step {step + 1}/{args.steps}: "
                     f"strain={opening / gauge_length:.6f}, tension={stress_bar:.2f} bar, "
-                    f"CMOD={cmod:.4f} A, T={float(out['temperature']):.2f} K"
+                    f"CMOD={cmod:.4f} A, crack_L={crack_length:.2f} A, T={float(out['temperature']):.2f} K"
                 )
 
     summary = summarize_crack(csv_path)
@@ -357,6 +456,8 @@ def run_w_crack(args) -> dict:
             "opening_rate_A_ps": float(opening_rate),
             "crack_half_length_A": float(args.crack_half_length_A),
             "crack_gap_A": float(args.crack_gap_A),
+            "crack_open_threshold_A": float(args.crack_open_threshold_A),
+            "crack_length_bins": int(args.crack_length_bins),
             "grip_thickness_A": float(args.grip_thickness_A),
             "gauge_length_A": float(gauge_length),
             "output_dir": str(output_dir),

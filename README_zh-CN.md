@@ -411,6 +411,7 @@ python run_scripts/w_crack.py \
 
 裂纹工作流现在也支持 `--traj-interval` 输出 `trajectory.xyz`。
 `crack_response.csv` 中的 `stress_bar` 采用开裂拉伸为正的口径；内部 virial 原始符号保留在 `native_stress_yy_bar`。
+裂纹报告还会跟踪 `stress_drop_ratio`、`crack_length_A` 和 `crack_extension_A`；做 DBTT 扫描前，先用这些指标确认至少一个温度点真的发生裂纹扩展。
 
 大体系自定义结构示例：
 

@@ -46,6 +46,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--grip-thickness-A", type=float, default=3.0)
     p.add_argument("--target-strain", type=float, default=0.02)
     p.add_argument("--opening-rate-A-ps", type=float, default=None)
+    p.add_argument("--crack-open-threshold-A", type=float, default=1.0)
+    p.add_argument("--crack-length-bins", type=int, default=160)
+    p.add_argument("--traj-interval", type=int, default=0)
+    p.add_argument("--print-interval", type=int, default=50)
     p.add_argument("--smoke", action="store_true")
     return p
 
@@ -66,6 +70,10 @@ def run_w_dbtt_scan(args) -> dict:
     crack_args.grip_thickness_A = float(args.grip_thickness_A)
     crack_args.target_strain = float(args.target_strain)
     crack_args.opening_rate_A_ps = args.opening_rate_A_ps
+    crack_args.crack_open_threshold_A = float(args.crack_open_threshold_A)
+    crack_args.crack_length_bins = int(args.crack_length_bins)
+    crack_args.traj_interval = int(args.traj_interval)
+    crack_args.print_interval = int(args.print_interval)
     if args.replicas:
         crack_args.replicas = str(args.replicas)
     if args.structure:
@@ -78,6 +86,8 @@ def run_w_dbtt_scan(args) -> dict:
         crack_args.equil_steps = 5
         crack_args.target_strain = 0.002
         crack_args.replicas = "4,4,3"
+        crack_args.traj_interval = 0
+        crack_args.print_interval = 10
     else:
         temperatures = _parse_temperatures(args.temperatures)
 
@@ -103,6 +113,11 @@ def run_w_dbtt_scan(args) -> dict:
             "orientation": str(args.orientation),
             "temperatures_k": temperatures,
             "temperature_scale": float(args.temperature_scale),
+            "acceptance_criteria": {
+                "stress_drop_ratio_min": 0.1,
+                "max_cmod_A_min": 1.0,
+                "peak_stress_must_not_be_final_step": True,
+            },
             "csv": str(csv_path),
             "plot": str(plot_path),
             "runs": [run["output_dir"] for run in runs],
