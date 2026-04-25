@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Corrected stress conversion from `eV/A^3` to `bar`. The correct factor is
+  `1 eV/A^3 = 1,602,176.6208 bar`; the old value was lower by a factor of 10
+  and made W stress-strain slopes appear 10x too soft.
+- Updated W barostat compressibility defaults to `3.2e-7 bar^-1`, matching the
+  corrected pressure units and the expected bulk-modulus scale for W.
 - Corrected LAMMPS `eam/fs` parsing in `EAMParser`.
   `WRe_YC2.eam.fs` is a Finnis-Sinclair potential with density tables indexed by
   both host and neighbor element, `rho[host, neighbor, r]`. It was previously

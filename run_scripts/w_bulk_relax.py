@@ -18,7 +18,7 @@ from io_utils.reader import AtomFileReader
 from io_utils.w_bcc import generate_oriented_bcc_w, write_xyz
 
 
-_EV_ANG3_TO_BAR = 160_217.66
+_EV_ANG3_TO_BAR = 1_602_176.6208
 
 
 def _project_root() -> Path:
@@ -115,7 +115,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gamma", type=float, default=2.0)
     p.add_argument("--target-pressure-bar", type=float, default=0.0)
     p.add_argument("--barostat-tau", type=float, default=0.5)
-    p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-6)
+    p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-7)
     p.add_argument("--barostat-mu-max", type=float, default=0.01)
     p.add_argument("--print-interval", type=int, default=100)
     p.add_argument("--traj-interval", type=int, default=0)

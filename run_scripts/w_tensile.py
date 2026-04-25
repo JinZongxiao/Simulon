@@ -20,7 +20,7 @@ from io_utils.w_bcc import generate_oriented_bcc_w, write_xyz
 from postprocess.stress_strain import plot_stress_strain, summarize_stress_strain
 
 
-_EV_ANG3_TO_BAR = 160_217.66
+_EV_ANG3_TO_BAR = 1_602_176.6208
 
 
 def _kinetic_stress_tensor(model) -> torch.Tensor:
@@ -79,7 +79,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--equil-target-pressure-bar", type=float, default=0.0)
     p.add_argument("--barostat-tau", type=float, default=0.2)
     p.add_argument("--barostat-gamma", type=float, default=2.0)
-    p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-6)
+    p.add_argument("--barostat-compressibility-bar-inv", type=float, default=3.2e-7)
     p.add_argument("--barostat-pressure-tolerance-bar", type=float, default=25.0)
     p.add_argument("--max-lateral-box-ratio", type=float, default=2.0)
     p.add_argument("--max-initial-stress-bar", type=float, default=5000.0)
@@ -306,18 +306,18 @@ def run_w_tensile(args) -> dict:
                 0.0,
                 0.0,
                 0.0,
-                float(-baseline_abs[0]),
-                float(-baseline_abs[0]),
-                float(-baseline_abs[1]),
-                float(-baseline_abs[2]),
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                float(baseline_abs[0]),
+                float(baseline_abs[axis_idx]),
                 float(baseline_abs[0]),
                 float(baseline_abs[1]),
                 float(baseline_abs[2]),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                float(-baseline_abs[axis_idx]),
+                float(-baseline_abs[0]),
+                float(-baseline_abs[1]),
+                float(-baseline_abs[2]),
                 float(state0["energy"]),
                 float(state0["kinetic_energy"]),
                 float(state0["energy"] + state0["kinetic_energy"]),
@@ -380,19 +380,19 @@ def run_w_tensile(args) -> dict:
                 [
                     step + 1,
                     strain,
-                    float(stress_axis_bar[0]),
+                    float(stress_axis_bar[axis_idx]),
                     float(stress_axis_bar[0]),
                     float(stress_axis_bar[1]),
                     float(stress_axis_bar[2]),
-                    float(stress_axis_abs[0]),
+                    float(stress_axis_abs[axis_idx]),
                     float(stress_axis_abs[0]),
                     float(stress_axis_abs[1]),
                     float(stress_axis_abs[2]),
-                    float(tension_axis_bar[0]),
+                    float(tension_axis_bar[axis_idx]),
                     float(tension_axis_bar[0]),
                     float(tension_axis_bar[1]),
                     float(tension_axis_bar[2]),
-                    float(tension_axis_abs[0]),
+                    float(tension_axis_abs[axis_idx]),
                     float(tension_axis_abs[0]),
                     float(tension_axis_abs[1]),
                     float(tension_axis_abs[2]),

@@ -15,7 +15,7 @@ from io_utils.reader import AtomFileReader
 from io_utils.w_bcc import generate_oriented_bcc_w, write_xyz
 
 
-_EV_ANG3_TO_BAR = 160_217.66
+_EV_ANG3_TO_BAR = 1_602_176.6208
 _ORIENTATIONS = ("100", "110", "111")
 
 

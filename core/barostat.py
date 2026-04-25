@@ -2,7 +2,7 @@
 core/barostat.py — Barostat implementations
 
 Pressure units are bar externally:
-  1 eV/Å^3 = 160 217.66 bar
+  1 eV/Angstrom^3 = 1 602 176.6208 bar
 
 This module provides:
   - BerendsenBarostat: legacy isotropic pressure control
@@ -13,7 +13,7 @@ from __future__ import annotations
 import torch
 
 
-_EV_ANG3_TO_BAR: float = 160_217.66
+_EV_ANG3_TO_BAR: float = 1_602_176.6208
 _BAR_TO_EV_ANG3: float = 1.0 / _EV_ANG3_TO_BAR
 _KB_EV_K: float = 8.617333262e-5
 
@@ -101,7 +101,7 @@ class AnisotropicNPTBarostat:
         gamma_p: float = 2.0,
         control_axes = (True, True, True),
         max_eta_dot: float = 0.05,
-        compressibility_bar_inv: float = 3.2e-6,
+        compressibility_bar_inv: float = 3.2e-7,
         pressure_tolerance_bar: float = 25.0,
         stochastic: bool = False,
     ):

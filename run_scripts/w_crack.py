@@ -18,7 +18,7 @@ from io_utils.w_bcc import generate_oriented_bcc_w, write_xyz
 from postprocess.crack import plot_crack, summarize_crack
 
 
-_EV_ANG3_TO_BAR = 160_217.66
+_EV_ANG3_TO_BAR = 1_602_176.6208
 
 
 def _project_root() -> Path:

@@ -16,6 +16,12 @@ def _get_tension_value(row: dict, axis: str) -> float:
     return 0.0
 
 
+def _get_axial_tension_value(row: dict) -> float:
+    if "tension_bar" in row and row["tension_bar"] not in ("", None):
+        return float(row["tension_bar"])
+    return _get_tension_value(row, "xx")
+
+
 def plot_stress_strain(csv_path: str | Path, png_path: str | Path):
     import matplotlib.pyplot as plt
 
@@ -29,14 +35,14 @@ def plot_stress_strain(csv_path: str | Path, png_path: str | Path):
         reader = csv.DictReader(f)
         for row in reader:
             strains.append(float(row["strain"]))
-            sxx.append(_get_tension_value(row, "xx"))
+            sxx.append(_get_axial_tension_value(row))
             syy.append(_get_tension_value(row, "yy"))
             szz.append(_get_tension_value(row, "zz"))
     if not strains:
         raise ValueError(f"No tensile data found in {csv_path}")
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.plot(strains, sxx, label=r"Axial $\sigma_{xx}$", linewidth=2.0)
+    ax.plot(strains, sxx, label="Axial tension", linewidth=2.0)
     ax.plot(strains, syy, label=r"Lateral $\sigma_{yy}$", linewidth=1.5, alpha=0.85)
     ax.plot(strains, szz, label=r"Lateral $\sigma_{zz}$", linewidth=1.5, alpha=0.85)
     ax.set_xlabel("Engineering strain")
@@ -60,7 +66,7 @@ def summarize_stress_strain(csv_path: str | Path) -> dict:
         reader = csv.DictReader(f)
         for row in reader:
             strains.append(float(row["strain"]))
-            stresses.append(_get_tension_value(row, "xx"))
+            stresses.append(_get_axial_tension_value(row))
             syy.append(_get_tension_value(row, "yy"))
             szz.append(_get_tension_value(row, "zz"))
             temps.append(float(row.get("temperature_k", 0.0)))

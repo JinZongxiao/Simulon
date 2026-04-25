@@ -264,7 +264,7 @@ python run_scripts/w_tensile.py \
   --lateral-mode stress-free \
   --barostat-tau 0.1 \
   --barostat-gamma 1.0 \
-  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-compressibility-bar-inv 3.2e-7 \
   --barostat-pressure-tolerance-bar 25.0 \
   --max-lateral-box-ratio 2.0 \
   --gamma 2.0 \
@@ -288,7 +288,7 @@ python run_scripts/w_bulk_relax.py \
   --gamma 2.0 \
   --target-pressure-bar 0.0 \
   --barostat-tau 0.5 \
-  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-compressibility-bar-inv 3.2e-7 \
   --barostat-mu-max 0.005 \
   --traj-interval 500 \
   --output-dir run_output/w_bulk_relax_W31250

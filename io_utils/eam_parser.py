@@ -74,8 +74,11 @@ class EAMParser:
         self.embedding_deriv_splines = {}
         self.density_splines = {}
         self.density_deriv_splines = {}
+        self.density_splines_by_pair = defaultdict(dict)
+        self.density_deriv_splines_by_pair = defaultdict(dict)
         self.pair_potential_splines = defaultdict(dict)
         self.pair_potential_deriv_splines = defaultdict(dict)
+        self.is_fs_format = False
 
         # Embedding function F(rho)
         embedding_data = np.array(data_lines[:self.n_rho])
@@ -88,6 +91,8 @@ class EAMParser:
         r_values = np.arange(self.n_r) * self.d_r
         self.density_splines[0] = CubicSpline(r_values, density_data, bc_type='not-a-knot')
         self.density_deriv_splines[0] = self.density_splines[0].derivative(1)
+        self.density_splines_by_pair[0][0] = self.density_splines[0]
+        self.density_deriv_splines_by_pair[0][0] = self.density_deriv_splines[0]
 
         # Pair potential phi(r)
         pair_potential_data = np.array(data_lines[self.n_rho + self.n_r : self.n_rho + 2 * self.n_r])

@@ -95,7 +95,7 @@ Purpose: relax a bulk W cell toward zero pressure before using it in a tensile r
 - `--barostat-tau`
   Physical meaning: Berendsen pressure relaxation time.
 - `--barostat-compressibility-bar-inv`
-  Physical meaning: effective isotropic compressibility used by the Berendsen barostat.
+  Physical meaning: effective isotropic compressibility used by the Berendsen barostat. For W, the default `3.2e-7 bar^-1` is consistent with a few-hundred-GPa bulk modulus scale.
 - `--barostat-mu-max`
   Engineering meaning: maximum isotropic scaling per step. Lower values are slower but safer for large systems.
 
@@ -122,7 +122,7 @@ python run_scripts/w_bulk_relax.py \
   --gamma 2.0 \
   --target-pressure-bar 0.0 \
   --barostat-tau 0.5 \
-  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-compressibility-bar-inv 3.2e-7 \
   --barostat-mu-max 0.005 \
   --traj-interval 500 \
   --output-dir run_output/w_bulk_relax_W31250
@@ -148,7 +148,7 @@ Script: `run_scripts/w_tensile.py`
 - `--barostat-gamma`
   Physical meaning: damping applied to the barostat degrees of freedom.
 - `--barostat-compressibility-bar-inv`
-  Physical meaning: effective lateral compressibility used by the anisotropic pressure controller. This sets how strongly the lateral box reacts to a stress mismatch.
+  Physical meaning: effective lateral compressibility used by the anisotropic pressure controller. This sets how strongly the lateral box reacts to a stress mismatch; for W, start from `3.2e-7 bar^-1`.
 - `--barostat-pressure-tolerance-bar`
   Physical meaning: deadband around the target lateral stress. Inside this tolerance, the controller only damps its own rate instead of continuing to drift.
 - `--max-lateral-box-ratio`
@@ -188,7 +188,7 @@ python run_scripts/w_tensile.py \
   --lateral-mode stress-free \
   --barostat-tau 0.1 \
   --barostat-gamma 1.0 \
-  --barostat-compressibility-bar-inv 3.2e-6 \
+  --barostat-compressibility-bar-inv 3.2e-7 \
   --barostat-pressure-tolerance-bar 25.0 \
   --max-lateral-box-ratio 2.0 \
   --gamma 2.0 \
