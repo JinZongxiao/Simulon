@@ -45,7 +45,9 @@ def main():
     assert all(value == value for value in stresses), "stress contains NaN"
     assert all(value == value for value in temps), "temperature contains NaN"
     assert max(cods) > 0.0, "CMOD should become positive"
+    assert max(stresses) > 0.0, "crack opening stress should be positive in the reported tension-positive convention"
     assert result["n_points"] == len(rows), "summary point count mismatch"
+    assert result.get("stress_sign_convention") == "stress_bar is tension-positive"
     assert Path(result["plot"]).exists(), "crack response plot must exist"
     print("W crack smoke test passed.")
 

@@ -20,8 +20,8 @@ def summarize_crack(csv_path: str | Path) -> dict:
     stresses = [float(row["stress_bar"]) for row in rows]
     cods = [float(row["cmod_A"]) for row in rows]
     temps = [float(row["temperature_k"]) for row in rows]
-    abs_stresses = [abs(value) for value in stresses]
-    peak_stress_idx = max(range(len(abs_stresses)), key=lambda i: abs_stresses[i])
+    tensile_stresses = [max(0.0, value) for value in stresses]
+    peak_stress_idx = max(range(len(tensile_stresses)), key=lambda i: tensile_stresses[i])
     peak_cmod_idx = max(range(len(cods)), key=lambda i: cods[i])
     n_fit = min(5, len(strains))
     if n_fit >= 2:
@@ -32,22 +32,25 @@ def summarize_crack(csv_path: str | Path) -> dict:
     fracture_work = 0.0
     for i in range(1, len(cods)):
         dc = cods[i] - cods[i - 1]
-        fracture_work += 0.5 * (abs_stresses[i] + abs_stresses[i - 1]) * abs(dc)
+        fracture_work += 0.5 * (tensile_stresses[i] + tensile_stresses[i - 1]) * abs(dc)
+    peak_tensile_stress = tensile_stresses[peak_stress_idx]
     return {
         "n_points": len(rows),
         "max_applied_strain": max(strains),
         "stress_min_bar": min(stresses),
         "stress_max_bar": max(stresses),
-        "peak_stress_magnitude_bar": abs_stresses[peak_stress_idx],
+        "peak_tensile_stress_bar": peak_tensile_stress,
+        "peak_stress_magnitude_bar": peak_tensile_stress,
         "cmod_at_peak_stress_A": cods[peak_stress_idx],
         "max_cmod_A": cods[peak_cmod_idx],
         "stress_at_max_cmod_bar": stresses[peak_cmod_idx],
         "initial_cmod_slope_A_per_strain": cmod_slope,
         "final_stress_bar": stresses[-1],
         "final_cmod_A": cods[-1],
-        "stress_retention_ratio": 0.0 if abs_stresses[peak_stress_idx] <= 1.0e-12 else stresses[-1] / abs_stresses[peak_stress_idx],
+        "stress_retention_ratio": 0.0 if peak_tensile_stress <= 1.0e-12 else stresses[-1] / peak_tensile_stress,
         "fracture_work_proxy_bar_A": fracture_work,
         "mean_temperature_k": sum(temps) / len(temps),
+        "stress_sign_convention": "stress_bar is tension-positive",
     }
 
 
@@ -70,7 +73,7 @@ def plot_crack(csv_path: str | Path, output_path: str | Path) -> str:
 
     axes[0].plot(strains, stresses, color="#1f77b4", linewidth=1.8)
     axes[0].set_xlabel("Applied strain")
-    axes[0].set_ylabel("Stress (bar)")
+    axes[0].set_ylabel("Opening stress, tension positive (bar)")
     axes[0].grid(True, alpha=0.3)
 
     axes[1].plot(strains, cods, color="#d62728", linewidth=1.8)

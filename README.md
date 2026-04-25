@@ -410,6 +410,7 @@ python run_scripts/w_crack.py \
 Outputs are grouped by orientation, e.g. `run_output/w_crack/orientation_100/`, and include `crack_response.csv`, `summary.json`, `crack_response.png`, and the generated cracked structure.
 
 The crack workflow can now dump `trajectory.xyz` with `--traj-interval`.
+`crack_response.csv` reports `stress_bar` as opening-tension-positive stress. The raw internal virial sign is retained as `native_stress_yy_bar`.
 
 Large custom-structure example:
 

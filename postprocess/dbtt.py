@@ -22,6 +22,12 @@ def collect_dbtt_rows(root_dir: str | Path) -> list[dict]:
                 "orientation": str(data.get("orientation", "unknown")),
                 "temperature_k": float(data["temperature_k"]),
                 "max_stress_bar": float(stress_max),
+                "peak_tensile_stress_bar": float(
+                    data.get(
+                        "peak_tensile_stress_bar",
+                        data.get("peak_stress_magnitude_bar", abs(float(stress_max))),
+                    )
+                ),
                 "peak_stress_magnitude_bar": float(
                     data.get("peak_stress_magnitude_bar", abs(float(stress_max)))
                 ),
@@ -52,6 +58,7 @@ def write_dbtt_csv(rows: list[dict], csv_path: str | Path) -> str:
         "orientation",
         "temperature_k",
         "max_stress_bar",
+        "peak_tensile_stress_bar",
         "peak_stress_magnitude_bar",
         "final_stress_bar",
         "max_cmod_A",
@@ -104,7 +111,7 @@ def plot_dbtt(rows: list[dict], output_path: str | Path) -> str:
         axes[2].plot(temps, retention, marker="o", linewidth=1.8, label=orientation)
 
     axes[0].set_xlabel("Temperature (K)")
-    axes[0].set_ylabel("Final stress (bar)")
+    axes[0].set_ylabel("Final opening stress, tension positive (bar)")
     axes[0].grid(True, alpha=0.3)
     axes[1].set_xlabel("Temperature (K)")
     axes[1].set_ylabel("Max CMOD (A)")

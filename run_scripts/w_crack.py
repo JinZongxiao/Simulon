@@ -273,6 +273,7 @@ def run_w_crack(args) -> dict:
                 "applied_strain",
                 "opening_A",
                 "stress_bar",
+                "native_stress_yy_bar",
                 "cmod_A",
                 "signed_cmod_A",
                 "potential_energy_ev",
@@ -295,7 +296,9 @@ def run_w_crack(args) -> dict:
             virial_tensor = out["virial_tensor"].to(kinetic_tensor.dtype)
             sigma_tensor_bar = ((kinetic_tensor + virial_tensor) / float(mol.box.volume)) * _EV_ANG3_TO_BAR
             stress_axis = _project_to_lattice_axes(sigma_tensor_bar, mol.box)
-            stress_bar = float(stress_axis[1])
+            native_stress_yy_bar = float(stress_axis[1])
+            # Internal stress uses compression-positive virial sign. Crack opening reports tension-positive.
+            stress_bar = -native_stress_yy_bar
 
             vy_now = mol.coordinates @ y_unit
             signed_cmod = float((vy_now[upper_mouth].mean() - vy_now[lower_mouth].mean()).item() - initial_cmod)
@@ -309,6 +312,7 @@ def run_w_crack(args) -> dict:
                     opening / gauge_length,
                     opening,
                     stress_bar,
+                    native_stress_yy_bar,
                     cmod,
                     signed_cmod,
                     float(out["energy"].item()),
@@ -332,7 +336,7 @@ def run_w_crack(args) -> dict:
             if (step + 1) % max(1, args.print_interval) == 0:
                 print(
                     f"Step {step + 1}/{args.steps}: "
-                    f"strain={opening / gauge_length:.6f}, stress={stress_bar:.2f} bar, "
+                    f"strain={opening / gauge_length:.6f}, tension={stress_bar:.2f} bar, "
                     f"CMOD={cmod:.4f} A, T={float(out['temperature']):.2f} K"
                 )
 
@@ -360,6 +364,8 @@ def run_w_crack(args) -> dict:
             "plot": str(plot_path),
             "traj": str(traj_path) if int(args.traj_interval) > 0 else None,
             "device": str(device),
+            "stress_sign_convention": "stress_bar is tension-positive",
+            "native_stress_sign_convention": "native_stress_yy_bar keeps the internal compression-positive virial sign",
             "smoke": bool(args.smoke),
         }
     )

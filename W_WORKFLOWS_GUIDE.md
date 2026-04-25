@@ -279,8 +279,10 @@ Script: `run_scripts/w_crack.py`
 
 ### Crack Report Fields
 
+- `stress_bar`
+  Opening stress using the tension-positive convention. The raw internal compression-positive virial sign is also written as `native_stress_yy_bar`.
 - `peak_stress_magnitude_bar`
-  Maximum absolute opening stress magnitude during the run.
+  Peak opening tensile stress during the run. Kept under this historical field name for DBTT compatibility.
 - `cmod_at_peak_stress_A`
   Crack-mouth opening displacement at the stress peak.
 - `max_cmod_A`

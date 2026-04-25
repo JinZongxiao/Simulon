@@ -410,6 +410,7 @@ python run_scripts/w_crack.py \
 输出按取向分目录保存，例如 `run_output/w_crack/orientation_100/`，包含 `crack_response.csv`、`summary.json`、`crack_response.png` 和生成的裂纹结构。
 
 裂纹工作流现在也支持 `--traj-interval` 输出 `trajectory.xyz`。
+`crack_response.csv` 中的 `stress_bar` 采用开裂拉伸为正的口径；内部 virial 原始符号保留在 `native_stress_yy_bar`。
 
 大体系自定义结构示例：
 
