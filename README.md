@@ -331,28 +331,39 @@ python run_scripts/w_indent.py \
   --replicas 6,6,4 \
   --steps 5000 \
   --equil-steps 1000 \
+  --hold-steps 1000 \
+  --unload-steps 5000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
   --initial-depth-A 0.0 \
   --target-depth-A 2.0 \
+  --final-unload-depth-A 0.2 \
   --gamma 2.0
 ```
 
-Outputs are grouped by orientation, e.g. `run_output/w_indent/orientation_100/`, and include `load_depth.csv`, `summary.json`, `load_depth.png`, and the generated slab structure.
+Outputs are grouped by orientation, e.g. `run_output/w_indent/orientation_100/`, and include `nanoindent_log.csv`, legacy `load_depth.csv`, `summary.json`, `report.md`, `load_depth.png`, `load_depth_with_popin.png`, `trajectory.xyz`, `snapshots/`, `snapshots_png/`, and the generated slab structure.
 
 The updated indentation workflow supports:
 
-- loading + unloading in a single run
-- `phase=load/unload` in the CSV
-- optional trajectory dumping through `--traj-interval`
-- approximate Oliver-Pharr analysis in `summary.json`
-  - `unload_initial_stiffness_nN_per_A`
-  - `oliver_pharr_contact_depth_A`
-  - `projected_contact_area_A2`
+- loading, optional hold, and unloading in a single run
+- `phase=loading/hold/unloading` in `nanoindent_log.csv`
+- automatic `trajectory.xyz` plus interval frames through `--traj-interval`
+- pop-in detection from load drops or sudden loading-stiffness drops
+- a human-readable `report.md` for production runs
+- geometric spherical-contact hardness in `summary.json`
+  - `max_depth_A`
+  - `max_load_nN`
+  - `residual_depth_A`
+  - `unloading_stiffness_nN_per_A`
+  - `work_loading`
+  - `work_unloading`
+  - `plastic_work_fraction`
+  - `contact_area_A2`
   - `hardness_GPa`
-  - `reduced_modulus_GPa`
+  - `hardness_method=geometric_spherical_contact_area`
+  - `pop_in_detected`
 
-`hardness_GPa` and `reduced_modulus_GPa` are workflow-level estimates. They are useful for internal comparison across runs, but they are not yet a fully calibrated experimental nanoindentation pipeline.
+`hardness_GPa` uses `A = pi(2Rh - h^2)` and `H = Pmax/A`. This is a geometric workflow-level estimate for comparing Simulon runs, not a calibrated experimental Oliver-Pharr analysis. Plasticity indicators are currently reported as unavailable unless a real proxy is implemented.
 
 Large custom-structure example:
 
@@ -363,6 +374,7 @@ python run_scripts/w_indent.py \
   --box-length 80.0 \
   --steps 10000 \
   --equil-steps 1000 \
+  --hold-steps 1000 \
   --unload-steps 5000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \

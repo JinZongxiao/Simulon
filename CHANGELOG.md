@@ -4,6 +4,15 @@
 
 ### Added
 
+- Added a full W nanoindentation protocol with loading, optional hold, and
+  unloading phases. The workflow now writes `nanoindent_log.csv`,
+  `load_depth.png`, `load_depth_with_popin.png`, `summary.json`, `report.md`,
+  `trajectory.xyz`, `snapshots/`, and `snapshots_png/`.
+- Added nanoindentation pop-in detection from load drops or sudden loading
+  stiffness drops, with the detected point annotated in
+  `load_depth_with_popin.png` when present.
+- Added geometric spherical-contact hardness reporting for indentation via
+  `A = pi(2Rh - h^2)` and `hardness_method=geometric_spherical_contact_area`.
 - Added mechanism classification for W crack runs. `summary.json` now reports
   `classification`, `classification_reason`, `crack_opening_pass`,
   `significant_crack_propagation_pass`, `physics_acceptance_pass`, and explicit
@@ -19,6 +28,11 @@
 
 ### Changed
 
+- W indentation summaries now report complete loading/unloading analysis fields:
+  `max_depth_A`, `max_load_nN`, `residual_depth_A`,
+  `unloading_stiffness_nN_per_A`, `work_loading`, `work_unloading`,
+  `plastic_work_fraction`, `contact_area_A2`, `hardness_GPa`,
+  `pop_in_detected`, and explicit plasticity-proxy availability.
 - DBTT summaries now use per-temperature classifications instead of treating the
   first opening-acceptance pass as a DBTT candidate.
 - Uniform `opening_only` scans now report `dbtt_physics_pass=false`,

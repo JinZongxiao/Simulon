@@ -64,11 +64,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--indent-steps", type=int, default=5000)
     p.add_argument("--indent-equil-steps", type=int, default=1000)
+    p.add_argument("--indent-hold-steps", type=int, default=0)
+    p.add_argument("--indent-unload-steps", type=int, default=1000)
     p.add_argument("--indent-initial-depth-A", type=float, default=0.0)
     p.add_argument("--indent-target-depth-A", type=float, default=2.0)
+    p.add_argument("--indent-hold-depth-A", type=float, default=None)
+    p.add_argument("--indent-final-unload-depth-A", type=float, default=0.0)
     p.add_argument("--indent-radius-A", type=float, default=8.0)
     p.add_argument("--indent-stiffness", type=float, default=5.0)
     p.add_argument("--indent-rate-A-ps", type=float, default=None)
+    p.add_argument("--indent-unload-rate-A-ps", type=float, default=None)
+    p.add_argument("--indent-traj-interval", type=int, default=0)
 
     p.add_argument("--crack-steps", type=int, default=5000)
     p.add_argument("--crack-equil-steps", type=int, default=500)
@@ -170,11 +176,17 @@ def run_w_batch_report(args) -> dict:
             indent_args.gamma = float(args.gamma)
             indent_args.steps = int(args.indent_steps)
             indent_args.equil_steps = int(args.indent_equil_steps)
+            indent_args.hold_steps = int(args.indent_hold_steps)
+            indent_args.unload_steps = int(args.indent_unload_steps)
             indent_args.initial_depth_A = float(args.indent_initial_depth_A)
             indent_args.target_depth_A = float(args.indent_target_depth_A)
+            indent_args.hold_depth_A = args.indent_hold_depth_A
+            indent_args.final_unload_depth_A = float(args.indent_final_unload_depth_A)
             indent_args.indenter_radius_A = float(args.indent_radius_A)
             indent_args.indenter_stiffness = float(args.indent_stiffness)
             indent_args.indent_rate_A_ps = args.indent_rate_A_ps
+            indent_args.unload_rate_A_ps = args.indent_unload_rate_A_ps
+            indent_args.traj_interval = int(args.indent_traj_interval)
             indent_args.smoke = bool(args.smoke)
             if args.eam:
                 indent_args.eam = str(args.eam)

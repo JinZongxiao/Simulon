@@ -214,27 +214,59 @@ Script: `run_scripts/w_indent.py`
   Physical meaning: initial effective indentation depth relative to the geometric contact reference. `0.0` means start at geometric first contact.
 - `--target-depth-A`
   Physical meaning: target effective indentation depth.
+- `--hold-steps`
+  Physical meaning: optional constant-depth hold steps after loading.
+- `--hold-depth-A`
+  Physical meaning: constant hold depth. If omitted, the target depth is used.
+- `--unload-steps`
+  Physical meaning: unloading steps after loading/hold. The default enables an unloading segment.
+- `--final-unload-depth-A`
+  Physical meaning: final command depth at the end of unloading.
 - `--indent-rate-A-ps`
   Physical meaning: imposed indentation speed in `A/ps`. If omitted, it is inferred from `(target-depth - initial-depth) / (steps * dt)`.
+- `--unload-rate-A-ps`
+  Physical meaning: imposed unloading speed in `A/ps`. If omitted, it is inferred from `(hold-depth - final-unload-depth) / (unload-steps * dt)`.
+- `--traj-interval`
+  Physical meaning: optional interval for additional trajectory frames. `trajectory.xyz` is always written with at least initial/final states.
 
 ### Indentation Report Fields
 
+- `nanoindent_log.csv`
+  Complete loading/hold/unloading log. Required fields include `step`, `time_ps`, `phase`, `depth_A`, `load_nN`, `indenter_z`, `temp`, `pot`, `kin`, and `total`.
+- `report.md`
+  Human-readable production report with system, protocol, main results, interpretation, and limitations.
 - `max_load_nN`
   Maximum load during the run.
+- `max_depth_A`
+  Maximum indentation depth.
+- `residual_depth_A`
+  Residual depth estimated from the initial unloading stiffness intercept when unloading exists, otherwise the final logged depth.
 - `peak_load_depth_A`
   Depth where the load reaches its maximum.
-- `contact_onset_depth_A`
-  First depth where the load becomes nonzero.
-- `initial_loading_stiffness_nN_per_A`
-  Early loading slope after contact.
+- `unloading_stiffness_nN_per_A`
+  Linear slope from the first unloading points, in `nN/A`.
+- `work_loading`
+  Trapezoidal loading work in `nN*A`.
+- `work_unloading`
+  Trapezoidal recovered unloading work in `nN*A`.
+- `plastic_work_fraction`
+  `(work_loading - work_unloading) / work_loading`, clipped to `[0, 1]`.
+- `contact_area_A2`
+  Geometric spherical contact area `A = pi(2Rh - h^2)`.
+- `hardness_GPa`
+  `Pmax / contact_area`, using `1 nN/A^2 = 100 GPa`.
+- `hardness_method`
+  Currently `geometric_spherical_contact_area`.
+- `pop_in_detected`, `pop_in_depth_A`, `pop_in_load_nN`
+  Pop-in detection from load drops or sudden loading-stiffness drops. If no event is detected, `pop_in_detected=false`.
+- `plasticity_indicator_available`
+  Currently `false` unless a real CSP/non-bcc/displacement proxy is implemented.
 - `max_contact_atoms`
   Maximum number of atoms simultaneously inside the indenter interaction zone.
-- `hardness_GPa`
-  Oliver-Pharr-style hardness estimate from the current loading-unloading cycle.
-- `reduced_modulus_GPa`
-  Oliver-Pharr-style reduced modulus estimate from the initial unloading stiffness.
 
-These hardness and modulus fields are currently workflow-level estimates. They are useful for comparing runs inside Simulon, but they should not yet be treated as a fully calibrated experimental nanoindentation pipeline.
+Generated outputs include `nanoindent_log.csv`, legacy `load_depth.csv`, `load_depth.png`, `load_depth_with_popin.png`, `summary.json`, `report.md`, `trajectory.xyz`, `snapshots/`, and `snapshots_png/`.
+
+The hardness field is currently a geometric workflow-level estimate. It is useful for comparing runs inside Simulon, but it should not yet be treated as a fully calibrated experimental nanoindentation pipeline.
 
 ### Indentation Large-Structure Example
 
@@ -247,6 +279,7 @@ python run_scripts/w_indent.py \
   --box-length 80.0 \
   --steps 10000 \
   --equil-steps 1000 \
+  --hold-steps 1000 \
   --unload-steps 5000 \
   --indenter-radius-A 8.0 \
   --indenter-stiffness 5.0 \
