@@ -41,6 +41,18 @@
 
 ---
 
+## 模拟视频
+
+W 力学流程视频位于 `docs/videos/`：
+
+| 工作流 | 视频 |
+|--------|------|
+| W 拉伸 | [w_tensile.mp4](docs/videos/w_tensile.mp4) |
+| W 纳米压痕 | [w_nanoindentation.mp4](docs/videos/w_nanoindentation.mp4) |
+| W 裂纹开口 | [w_crack_opening.mp4](docs/videos/w_crack_opening.mp4) |
+
+---
+
 ## 仓库结构
 
 ```

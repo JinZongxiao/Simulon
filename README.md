@@ -41,6 +41,18 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 
 ---
 
+## Simulation videos
+
+W mechanics videos are available under `docs/videos/`:
+
+| Workflow | Video |
+|----------|-------|
+| W tensile | [w_tensile.mp4](docs/videos/w_tensile.mp4) |
+| W nanoindentation | [w_nanoindentation.mp4](docs/videos/w_nanoindentation.mp4) |
+| W crack opening | [w_crack_opening.mp4](docs/videos/w_crack_opening.mp4) |
+
+---
+
 ## Repository layout
 
 ```
