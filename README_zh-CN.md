@@ -412,6 +412,7 @@ python run_scripts/w_crack.py \
 裂纹工作流现在也支持 `--traj-interval` 输出 `trajectory.xyz`。
 `crack_response.csv` 中的 `stress_bar` 采用开裂拉伸为正的口径；内部 virial 原始符号保留在 `native_stress_yy_bar`。
 裂纹报告还会跟踪 `stress_drop_ratio`、`crack_length_A` 和 `crack_extension_A`；做 DBTT 扫描前，先用这些指标确认至少一个温度点真的发生裂纹扩展。
+`summary.json` 会把单次裂纹结果分类为 `brittle`、`ductile`、`opening_only`、`no_crack_growth` 或 `invalid`。当前 plasticity 指标会明确标记为不可用，因此不会强行给出 ductile DBTT 结论。
 
 大体系自定义结构示例：
 
@@ -459,6 +460,16 @@ python run_scripts/w_dbtt_scan.py \
 - `max_cmod_A`
 
 对当前这套基于裂纹开口的 W DBTT 工作流，建议优先用上面三项判断脆-韧转变。`peak_stress_magnitude_bar` 仍然会保留，但不建议单独拿它下转变温度结论。
+DBTT 汇总现在基于每个温度点的裂纹分类。如果所有温度点都是类似的 `opening_only`，`dbtt_candidate_temperature_k` 会保持为 `null`，`dbtt_status` 为 `not_identified`。
+
+裂纹传播参数扫描：
+
+```bash
+python run_scripts/w_crack_sweep.py \
+  --orientation custom \
+  --structure run_output/prod_w_bulk_relax_W31250/orientation_custom/W_custom_relaxed.xyz \
+  --box-length 79.28473306554223
+```
 
 大体系自定义结构示例：
 

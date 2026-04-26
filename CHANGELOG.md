@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-04-26
+
+### Added
+
+- Added mechanism classification for W crack runs. `summary.json` now reports
+  `classification`, `classification_reason`, `crack_opening_pass`,
+  `significant_crack_propagation_pass`, `physics_acceptance_pass`, and explicit
+  plasticity availability fields.
+- Added crack-growth diagnostics to `run_scripts/w_crack.py`, including
+  `crack_length_A`, `crack_extension_A`, key-strain XYZ/PNG snapshots, and
+  threshold-sensitivity outputs for crack-length tracking.
+- Added `run_scripts/w_crack_sweep.py` for crack-propagation acceptance sweeps
+  over temperature, crack length, target strain, grip thickness, and run length.
+- Added `run_scripts/rebuild_w_dbtt_summary.py` to rebuild DBTT summaries from
+  existing per-temperature `summary.json` files without rerunning MD.
+- Added DBTT mechanism summary plotting via `dbtt_mechanism_summary.png`.
+
+### Changed
+
+- DBTT summaries now use per-temperature classifications instead of treating the
+  first opening-acceptance pass as a DBTT candidate.
+- Uniform `opening_only` scans now report `dbtt_physics_pass=false`,
+  `dbtt_status=not_identified`, and `dbtt_candidate_temperature_k=null`.
+- Existing W31250 100-800 K crack-opening scans are now interpreted as workflow
+  passes but DBTT physics not identified unless a brittle-to-ductile mechanism
+  contrast is present.
+
+### Validation
+
+- Server-side checks on `comput5` passed for `test_w_crack_smoke.py`,
+  `test_w_dbtt_smoke.py`, and `w_crack_sweep.py --smoke`.
+- A W31250 low-temperature sweep case reached significant-propagation acceptance
+  (`max_crack_extension_A > 2 A`, `max_CMOD_A > 3 A`, and post-peak stress drop),
+  while stronger opening cases remained correctly classified as `opening_only`
+  when long-range crack extension was not observed.
+
 ## 2026-04-24
 
 ### Fixed

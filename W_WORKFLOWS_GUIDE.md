@@ -307,6 +307,20 @@ Script: `run_scripts/w_crack.py`
   Final stress divided by peak stress magnitude.
 - `fracture_work_proxy_bar_A`
   Area under the stress-CMOD response. Use it as a relative fracture-work proxy, not as a direct toughness value.
+- `classification`
+  Mechanism label: `brittle`, `ductile`, `opening_only`, `no_crack_growth`, or `invalid`.
+- `classification_reason`
+  Short explanation for the mechanism label.
+- `crack_opening_pass`
+  True when CMOD, stress drop, and peak-step criteria show a real opening response.
+- `significant_crack_propagation_pass`
+  True when crack extension is at least `2 A`, CMOD is at least `3 A`, stress drop is at least `0.15`, and peak stress is not at the final step.
+- `physics_acceptance_pass`
+  True only when the response can be interpreted as `brittle`, `ductile`, or `opening_only`.
+- `plasticity_indicator_available`
+  Currently `false`; no DXA/CSP/non-affine plasticity proxy is used yet.
+- `crack_tracking_reliable`
+  Reliability flag from recalculating crack extension with thresholds `0.5, 0.8, 1.0, 1.2, 1.5 A`.
 
 ### Crack Large-Structure Example
 
@@ -341,9 +355,23 @@ This workflow repeatedly calls the crack workflow at multiple temperatures.
   Same meanings as in the crack workflow.
 - `--crack-half-length-A`, `--crack-gap-A`, `--grip-thickness-A`, `--target-strain`, `--opening-rate-A-ps`
   Same meanings as in the crack workflow.
+- `--crack-open-threshold-A`, `--crack-length-bins`, `--traj-interval`, `--print-interval`
+  Same meanings as in the crack workflow.
 
 ### DBTT Report Fields
 
+- `classification`
+  Per-temperature crack mechanism label.
+- `dbtt_workflow_pass`
+  True when all per-temperature jobs finished and the combined summary was generated.
+- `dbtt_physics_pass`
+  True only when the scan shows a conservative brittle-to-ductile mechanism contrast. It remains false for uniform opening-only scans.
+- `dbtt_status`
+  `candidate_identified`, `not_identified`, or `insufficient_data`.
+- `dbtt_candidate_temperature_k`
+  Candidate transition temperature. This is `null` unless a mechanism contrast is present.
+- `classification_counts`
+  Count of `brittle`, `ductile`, `opening_only`, `no_crack_growth`, and `invalid` cases.
 - `peak_stress_magnitude_bar`
   Temperature dependence of peak opening-stress magnitude. Keep it for reference, but do not use it alone to identify the transition.
 - `max_cmod_A`
@@ -355,7 +383,31 @@ This workflow repeatedly calls the crack workflow at multiple temperatures.
 - `stress_retention_ratio`
   Final stress divided by peak stress magnitude. Lower values indicate stronger post-peak softening.
 
-For the current crack-based W DBTT workflow, interpret the transition primarily through `final_stress_bar`, `stress_retention_ratio`, and `max_cmod_A`.
+For the current crack-based W DBTT workflow, do not interpret a uniform `opening_only` scan as DBTT. The workflow can pass while DBTT physics remains `not_identified`.
+
+## Crack Propagation Sweep
+
+Script: `run_scripts/w_crack_sweep.py`
+
+Default recommended case:
+
+```bash
+python run_scripts/w_crack_sweep.py \
+  --orientation custom \
+  --structure run_output/prod_w_bulk_relax_W31250/orientation_custom/W_custom_relaxed.xyz \
+  --box-length 79.28473306554223
+```
+
+Supported grid parameters:
+
+- `--temperatures`
+- `--crack-half-lengths-A`
+- `--target-strains`
+- `--grip-thicknesses-A`
+- `--steps-list`
+- `--equil-steps-list`
+
+The default targets `T=100 K`, `crack_half_length_A=28`, `target_strain=0.10`, `steps=15000`, `equil_steps=2000`, and `grip_thickness_A=5`.
 
 ### DBTT Large-Structure Example
 

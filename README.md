@@ -412,6 +412,7 @@ Outputs are grouped by orientation, e.g. `run_output/w_crack/orientation_100/`, 
 The crack workflow can now dump `trajectory.xyz` with `--traj-interval`.
 `crack_response.csv` reports `stress_bar` as opening-tension-positive stress. The raw internal virial sign is retained as `native_stress_yy_bar`.
 The crack report also tracks `stress_drop_ratio`, `crack_length_A`, and `crack_extension_A`; use these to require real crack growth before running a DBTT scan.
+`summary.json` classifies each run as `brittle`, `ductile`, `opening_only`, `no_crack_growth`, or `invalid`. Plasticity is currently explicit-but-unavailable, so ductile DBTT claims remain conservative.
 
 Large custom-structure example:
 
@@ -459,6 +460,16 @@ The DBTT summary now emphasizes crack-response trends that are more interpretabl
 - `max_cmod_A`
 
 For the current W crack-based DBTT workflow, treat these three fields as the primary interpretation axis. `peak_stress_magnitude_bar` is still reported, but it should not be used alone to claim the transition temperature.
+The DBTT summary now uses per-temperature crack classifications. If all temperatures show the same `opening_only` mechanism, `dbtt_candidate_temperature_k` is `null` and `dbtt_status` is `not_identified`.
+
+Crack-propagation parameter sweep:
+
+```bash
+python run_scripts/w_crack_sweep.py \
+  --orientation custom \
+  --structure run_output/prod_w_bulk_relax_W31250/orientation_custom/W_custom_relaxed.xyz \
+  --box-length 79.28473306554223
+```
 
 Large custom-structure example:
 

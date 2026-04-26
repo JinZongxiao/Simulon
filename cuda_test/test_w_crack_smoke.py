@@ -52,6 +52,17 @@ def main():
     assert result.get("stress_sign_convention") == "stress_bar is tension-positive"
     assert "stress_drop_ratio" in result, "summary must report stress drop ratio"
     assert "max_crack_length_A" in result, "summary must report estimated crack length"
+    assert result.get("classification") in {
+        "brittle",
+        "ductile",
+        "opening_only",
+        "no_crack_growth",
+        "invalid",
+    }, "summary must report crack mechanism classification"
+    assert "physics_acceptance_pass" in result, "summary must report physics acceptance"
+    assert result.get("plasticity_indicator_available") is False, "plasticity proxy should be explicitly unavailable"
+    assert Path(result["snapshots"]["initial"]).exists(), "initial crack snapshot must exist"
+    assert Path(result["snapshots"]["final"]).exists(), "final crack snapshot must exist"
     assert Path(result["plot"]).exists(), "crack response plot must exist"
     print("W crack smoke test passed.")
 

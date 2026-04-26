@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from postprocess.dbtt import collect_dbtt_rows, plot_dbtt, summarize_dbtt, write_dbtt_csv
+from postprocess.dbtt import collect_dbtt_rows, plot_dbtt, plot_dbtt_mechanism, summarize_dbtt, write_dbtt_csv
 from run_scripts.w_crack import _build_parser as _build_crack_parser
 from run_scripts.w_crack import run_w_crack
 
@@ -105,8 +105,10 @@ def run_w_dbtt_scan(args) -> dict:
     csv_path = root_dir / "dbtt_summary.csv"
     json_path = root_dir / "dbtt_summary.json"
     plot_path = root_dir / "dbtt_summary.png"
+    mechanism_plot_path = root_dir / "dbtt_mechanism_summary.png"
     write_dbtt_csv(rows, csv_path)
     plot_dbtt(rows, plot_path)
+    plot_dbtt_mechanism(rows, mechanism_plot_path)
     summary = summarize_dbtt(rows)
     summary.update(
         {
@@ -120,6 +122,7 @@ def run_w_dbtt_scan(args) -> dict:
             },
             "csv": str(csv_path),
             "plot": str(plot_path),
+            "mechanism_plot": str(mechanism_plot_path),
             "runs": [run["output_dir"] for run in runs],
             "smoke": bool(args.smoke),
         }
@@ -129,6 +132,7 @@ def run_w_dbtt_scan(args) -> dict:
 
     print(f"DBTT summary: {csv_path}")
     print(f"DBTT plot: {plot_path}")
+    print(f"DBTT mechanism plot: {mechanism_plot_path}")
     print(f"DBTT json: {json_path}")
     if args.smoke:
         print("SMOKE TEST PASS")
