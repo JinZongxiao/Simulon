@@ -65,7 +65,10 @@ def main():
     assert all(value == value for value in temps), "temperature contains NaN"
     assert max(abs(s) for s in stresses) > 0.0, "stress should not be identically zero"
     assert result["n_points"] == len(rows), "summary point count mismatch"
+    assert result["recommended_plot_column"] == "tension_xx_bar", "summary must point users to tension-positive stress"
     assert Path(result["plot"]).exists(), "stress_strain plot must exist"
+    assert Path(result["lateral_stress_plot"]).exists(), "lateral stress diagnostic plot must exist"
+    assert Path(result["report"]).exists(), "tensile report must exist"
     print("W tensile smoke test passed.")
 
 

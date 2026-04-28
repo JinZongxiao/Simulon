@@ -75,6 +75,7 @@ core/
 io_utils/
   reader.py               # AtomFileReader: XYZ → tensors + neighbor list
   w_bcc.py                # Oriented BCC-W structure generator
+  w_structure_builder.py  # Pure-W bulk/surface/defect/crack/notch builder
   restart.py              # save_checkpoint / load_checkpoint
   writer.py / output_logger.py / eam_parser.py / ...
 
@@ -99,6 +100,7 @@ run_scripts/
   w_crack.py              # Tungsten crack-opening workflow
   w_dbtt_scan.py          # Tungsten DBTT temperature scan
   w_batch_report.py       # Combined W workflow runner + report export
+  build_w_structure.py    # Pure-W structure builder CLI
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
@@ -199,7 +201,37 @@ for step in range(next_step, total_steps):
     model()
 ```
 
-### 6. W tensile workflow
+### 6. Pure W structure builder
+
+Generate reusable W structures before running mechanics workflows:
+
+```bash
+python run_scripts/build_w_structure.py --kind bulk --orientation 100 --replicas 10,10,10
+python run_scripts/build_w_structure.py --kind surface --orientation 110 --replicas 10,10,6 --vacuum-A 30
+python run_scripts/build_w_structure.py --kind vacancy --orientation 100 --replicas 10,10,10 --vacancy-count 5
+python run_scripts/build_w_structure.py --kind interstitial --orientation 100 --replicas 8,8,8 --interstitial-count 2
+python run_scripts/build_w_structure.py --kind substitution --orientation 100 --replicas 8,8,8 --substitution-element Re --substitution-count 8
+python run_scripts/build_w_structure.py --kind void --orientation 100 --replicas 12,12,12 --void-radius-A 8
+python run_scripts/build_w_structure.py --kind crack --orientation 100 --replicas 20,10,10 --crack-half-length-A 30 --crack-opening-A 2
+python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
+```
+
+Outputs are written under `run_output/w_structure_builder/<case>/`:
+
+- `structure.xyz`
+- `summary.json`
+- `composition.csv`
+- `preview.png`
+
+This is a geometry builder. It does not relax the structure or validate a potential. Dislocation and grain-boundary builders are intentionally deferred to the next implementation stage.
+
+Smoke test:
+
+```bash
+python cuda_test/test_w_structure_builder_smoke.py
+```
+
+### 7. W tensile workflow
 
 Minimal smoke test:
 
@@ -246,16 +278,21 @@ Each tensile output directory contains:
 
 - `stress_strain.csv`
 - `summary.json`
+- `report.md`
 - `stress_strain.png`
+- `lateral_stress.png`
 - generated oriented structure, e.g. `W_100_generated.xyz`
 
-The CSV includes signed stress columns (`stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`), tension-positive columns (`tension_xx_bar`, `tension_yy_bar`, `tension_zz_bar`), box lengths, energy, temperature, and virial tensor diagonals.
+The CSV includes native signed stress columns (`stress_xx_bar`, `stress_yy_bar`, `stress_zz_bar`), tension-positive columns (`tension_xx_bar`, `tension_yy_bar`, `tension_zz_bar`), box lengths, energy, temperature, and virial tensor diagonals. For the tensile stress-strain curve, use only the axial `tension_xx_bar` / `tension_bar` column. Do not average `xx`, `yy`, and `zz` into one tensile curve; `tension_yy_bar` and `tension_zz_bar` are lateral stress diagnostics for the stress-free barostat. `stress_*` columns keep the internal compression-positive virial sign and are mainly diagnostic.
 
 The updated tensile workflow now:
 
 - performs zero-pressure equilibration before loading via `--equil-steps`
-- reports stress relative to the equilibrated initial state in `stress_xx_bar`
+- reports native signed stress relative to the equilibrated initial state in `stress_xx_bar`
 - writes tension-positive presentation columns as `tension_xx_bar`, `tension_yy_bar`, `tension_zz_bar`
+- writes `stress_strain.png` as the axial `tension_xx_bar` curve only
+- writes `lateral_stress.png` for `tension_yy_bar` and `tension_zz_bar` barostat diagnostics
+- generates `report.md` with the sign convention, main results, and the recommended plot column
 - also keeps absolute stress columns as `stress_xx_abs_bar`, `stress_yy_abs_bar`, `stress_zz_abs_bar`
 - stabilizes the anisotropic lateral pressure controller with `--barostat-compressibility-bar-inv` and `--barostat-pressure-tolerance-bar`
 - aborts if the lateral box runs away beyond `--max-lateral-box-ratio`
@@ -326,7 +363,7 @@ The intended use is:
 2. take `recommended_box_length_A` and the relaxed XYZ
 3. use those as the starting point for the next tensile run
 
-### 7. W nanoindentation workflow
+### 8. W nanoindentation workflow
 
 Minimal smoke test:
 
@@ -408,7 +445,7 @@ python run_scripts/w_indent.py --orientation 110 --replicas 6,6,4 --steps 5000 -
 python run_scripts/w_indent.py --orientation 111 --replicas 5,5,3 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
 ```
 
-### 8. W crack workflow
+### 9. W crack workflow
 
 Minimal smoke test:
 
@@ -455,7 +492,7 @@ python run_scripts/w_crack.py \
   --output-dir run_output/prod_w_crack_W31250
 ```
 
-### 9. W DBTT scan
+### 10. W DBTT scan
 
 Minimal smoke test:
 
@@ -509,7 +546,7 @@ python run_scripts/w_dbtt_scan.py \
   --output-dir run_output/prod_w_dbtt_W31250
 ```
 
-### 10. Batch report and parameter guide
+### 11. Batch report and parameter guide
 
 Run any subset of the four workflows with a unified output root:
 

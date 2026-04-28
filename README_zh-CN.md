@@ -75,6 +75,7 @@ core/
 io_utils/
   reader.py               # AtomFileReader：XYZ → 张量 + 邻居表
   w_bcc.py                # 取向 BCC-W 结构生成
+  w_structure_builder.py  # 纯 W bulk/surface/defect/crack/notch 结构生成器
   restart.py              # save_checkpoint / load_checkpoint
   writer.py / output_logger.py / eam_parser.py / ...
 
@@ -99,6 +100,7 @@ run_scripts/
   w_crack.py              # 钨裂纹开口工作流
   w_dbtt_scan.py          # 钨 DBTT 温度扫描
   w_batch_report.py       # W 力学批量运行与汇总报告
+  build_w_structure.py    # 纯 W 结构生成器 CLI
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
@@ -199,7 +201,37 @@ for step in range(next_step, total_steps):
     model()
 ```
 
-### 6. W 拉伸工作流
+### 6. 纯 W 结构生成器
+
+先生成可复用的 W 结构，再进入力学模拟：
+
+```bash
+python run_scripts/build_w_structure.py --kind bulk --orientation 100 --replicas 10,10,10
+python run_scripts/build_w_structure.py --kind surface --orientation 110 --replicas 10,10,6 --vacuum-A 30
+python run_scripts/build_w_structure.py --kind vacancy --orientation 100 --replicas 10,10,10 --vacancy-count 5
+python run_scripts/build_w_structure.py --kind interstitial --orientation 100 --replicas 8,8,8 --interstitial-count 2
+python run_scripts/build_w_structure.py --kind substitution --orientation 100 --replicas 8,8,8 --substitution-element Re --substitution-count 8
+python run_scripts/build_w_structure.py --kind void --orientation 100 --replicas 12,12,12 --void-radius-A 8
+python run_scripts/build_w_structure.py --kind crack --orientation 100 --replicas 20,10,10 --crack-half-length-A 30 --crack-opening-A 2
+python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
+```
+
+输出位于 `run_output/w_structure_builder/<case>/`：
+
+- `structure.xyz`
+- `summary.json`
+- `composition.csv`
+- `preview.png`
+
+这是几何结构生成器，不负责结构弛豫，也不等价于势函数物理验证。位错和晶界生成器留到下一阶段单独实现。
+
+Smoke test：
+
+```bash
+python cuda_test/test_w_structure_builder_smoke.py
+```
+
+### 7. W 拉伸工作流
 
 最小 smoke test：
 
@@ -246,16 +278,21 @@ python run_scripts/check_w_orientation.py --orientation all
 
 - `stress_strain.csv`
 - `summary.json`
+- `report.md`
 - `stress_strain.png`
+- `lateral_stress.png`
 - 自动生成的取向结构，如 `W_100_generated.xyz`
 
-CSV 中包含有符号应力列（`stress_xx_bar`、`stress_yy_bar`、`stress_zz_bar`）、拉伸为正的展示列（`tension_xx_bar`、`tension_yy_bar`、`tension_zz_bar`）、盒长、能量、温度和维里张量对角元。
+CSV 中包含原生有符号应力列（`stress_xx_bar`、`stress_yy_bar`、`stress_zz_bar`）、拉伸为正的展示列（`tension_xx_bar`、`tension_yy_bar`、`tension_zz_bar`）、盒长、能量、温度和维里张量对角元。画拉伸应力应变曲线和汇报时只使用轴向 `tension_xx_bar` / `tension_bar`。不要把 `xx`、`yy`、`zz` 平均成一条拉伸曲线；`tension_yy_bar` 和 `tension_zz_bar` 是横向应力诊断，用来检查 stress-free barostat。`stress_*` 保留内部压缩为正的 virial 符号，主要用于诊断。
 
 新版拉伸工作流现在会：
 
 - 先通过 `--equil-steps` 做零压预平衡
-- 在 `stress_xx_bar` 中输出相对于平衡初态的应力
+- 在 `stress_xx_bar` 中输出相对于平衡初态的原生有符号应力
 - 额外输出拉伸为正的展示列：`tension_xx_bar`、`tension_yy_bar`、`tension_zz_bar`
+- 将 `stress_strain.png` 输出为只包含轴向 `tension_xx_bar` 的主曲线
+- 将 `lateral_stress.png` 输出为 `tension_yy_bar` 和 `tension_zz_bar` 的横向控压诊断图
+- 自动生成 `report.md`，写清应力符号、主要结果和推荐画图列
 - 同时保留绝对应力列：`stress_xx_abs_bar`、`stress_yy_abs_bar`、`stress_zz_abs_bar`
 - 通过 `--barostat-compressibility-bar-inv` 和 `--barostat-pressure-tolerance-bar` 稳定各向异性侧向控压
 - 如果横向盒长超过 `--max-lateral-box-ratio`，会直接报错终止，避免静默生成失真曲线
@@ -326,7 +363,7 @@ python run_scripts/w_bulk_relax.py \
 2. 取 `recommended_box_length_A` 和 relaxed XYZ
 3. 再把它们作为下一条 tensile 的输入
 
-### 7. W 纳米压痕工作流
+### 8. W 纳米压痕工作流
 
 最小 smoke test：
 
@@ -408,7 +445,7 @@ python run_scripts/w_indent.py --orientation 110 --replicas 6,6,4 --steps 5000 -
 python run_scripts/w_indent.py --orientation 111 --replicas 5,5,3 --steps 5000 --equil-steps 1000 --indenter-radius-A 8.0 --indenter-stiffness 5.0 --initial-depth-A 0.0 --target-depth-A 2.0 --gamma 2.0
 ```
 
-### 8. W 裂纹工作流
+### 9. W 裂纹工作流
 
 最小 smoke test：
 
@@ -455,7 +492,7 @@ python run_scripts/w_crack.py \
   --output-dir run_output/prod_w_crack_W31250
 ```
 
-### 9. W DBTT 温度扫描
+### 10. W DBTT 温度扫描
 
 最小 smoke test：
 
@@ -509,7 +546,7 @@ python run_scripts/w_dbtt_scan.py \
   --output-dir run_output/prod_w_dbtt_W31250
 ```
 
-### 10. 批量运行与参数说明
+### 11. 批量运行与参数说明
 
 用统一输出根目录批量跑四条工作流中的任意组合：
 

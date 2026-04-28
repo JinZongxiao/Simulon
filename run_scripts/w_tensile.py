@@ -17,7 +17,12 @@ from core.mechanics import UniaxialTensileLoader
 from io_utils.eam_parser import EAMParser
 from io_utils.reader import AtomFileReader
 from io_utils.w_bcc import generate_oriented_bcc_w, write_xyz
-from postprocess.stress_strain import plot_stress_strain, summarize_stress_strain
+from postprocess.stress_strain import (
+    plot_lateral_stress,
+    plot_stress_strain,
+    summarize_stress_strain,
+    write_tensile_report,
+)
 
 
 _EV_ANG3_TO_BAR = 1_602_176.6208
@@ -427,7 +432,9 @@ def run_w_tensile(args) -> dict:
 
     summary = summarize_stress_strain(csv_path)
     plot_path = output_dir / "stress_strain.png"
+    lateral_plot_path = output_dir / "lateral_stress.png"
     plot_stress_strain(csv_path, plot_path)
+    plot_lateral_stress(csv_path, lateral_plot_path)
     summary.update(
         {
             "structure": str(structure_path),
@@ -454,8 +461,11 @@ def run_w_tensile(args) -> dict:
             "device": str(device),
             "smoke": bool(args.smoke),
             "plot": str(plot_path),
+            "lateral_stress_plot": str(lateral_plot_path),
         }
     )
+    report_path = output_dir / "report.md"
+    summary["report"] = write_tensile_report(summary, report_path)
     summary_path = output_dir / "summary.json"
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
@@ -463,6 +473,7 @@ def run_w_tensile(args) -> dict:
     print(f"W tensile completed. Data: {csv_path}")
     print(f"Summary: {summary_path}")
     print(f"Plot: {plot_path}")
+    print(f"Lateral stress diagnostic: {lateral_plot_path}")
     if int(args.traj_interval) > 0:
         print(f"Trajectory: {traj_path}")
     if args.smoke:

@@ -2,8 +2,9 @@
 
 ## Scope
 
-This guide documents the four independent pure-W mechanics workflows in Simulon, plus one auxiliary bulk-relax preparation workflow:
+This guide documents the pure-W structure builder, the four independent pure-W mechanics workflows in Simulon, plus one auxiliary bulk-relax preparation workflow:
 
+- `run_scripts/build_w_structure.py`
 - `run_scripts/w_bulk_relax.py`
 - `run_scripts/w_tensile.py`
 - `run_scripts/w_indent.py`
@@ -21,10 +22,46 @@ Every workflow accepts `--output-dir`. Outputs are grouped by orientation undern
 - crack: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 - dbtt: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/` with temperature subdirectories inside
 - bulk relax: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
+- structure builder: `.../<case_name>/`
 
 When `--orientation custom` is used, the same layout becomes `.../orientation_custom/`.
 
 This layout is intentional so you can run one workflow, two workflows, or all workflows without file collisions.
+
+## Pure W Structure Builder
+
+`run_scripts/build_w_structure.py` prepares geometry-only W input structures. It is useful before mechanics runs and before later ODS-W embedding work.
+
+Supported first-stage kinds:
+
+- `bulk`
+- `surface`
+- `vacancy`
+- `interstitial`
+- `substitution`
+- `void`
+- `crack`
+- `notch`
+
+Example commands:
+
+```bash
+python run_scripts/build_w_structure.py --kind bulk --orientation 100 --replicas 10,10,10
+python run_scripts/build_w_structure.py --kind surface --orientation 110 --replicas 10,10,6 --vacuum-A 30
+python run_scripts/build_w_structure.py --kind vacancy --orientation 100 --replicas 10,10,10 --vacancy-count 5
+python run_scripts/build_w_structure.py --kind void --orientation 100 --replicas 12,12,12 --void-radius-A 8
+python run_scripts/build_w_structure.py --kind crack --orientation 100 --replicas 20,10,10 --crack-half-length-A 30 --crack-opening-A 2
+python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
+```
+
+Each case writes:
+
+- `structure.xyz`
+- `summary.json`
+- `composition.csv`
+- `preview.png`
+
+Important limitation: this builder only creates geometry. It does not relax the structure and does not prove physical stability. Grain boundaries and dislocations are deliberately deferred because they need dedicated crystallographic construction and validation.
 
 ## Common Parameters
 
@@ -170,8 +207,14 @@ Script: `run_scripts/w_tensile.py`
   Mean lateral stress near the end. Useful to judge how well `stress-free` loading released transverse stress.
 - `stress_sign_convention`
   Current value: `tension_positive`.
+- `recommended_plot_column`
+  Current value: `tension_xx_bar`. This is the default and only column for the main tensile stress-strain plot.
+- `lateral_stress_columns`
+  Current value: `["tension_yy_bar", "tension_zz_bar"]`. These are transverse stress diagnostics for the stress-free barostat, not components to average into the tensile curve.
+- `native_stress_sign_convention`
+  Explains that `stress_*` columns retain the internal compression-positive virial sign and should not be used directly for presentation tensile curves.
 
-The tensile CSV contains both signed virial-style stress columns (`stress_*`) and tension-positive presentation columns (`tension_*`). Use the `tension_*` columns for plotting and interpretation.
+The tensile CSV contains both signed virial-style stress columns (`stress_*`) and tension-positive presentation columns (`tension_*`). Use `tension_xx_bar` / `tension_bar` for plotting and interpretation. Do not average `xx`, `yy`, and `zz`: uniaxial tensile stress is the axial component. The generated `stress_strain.png`, `summary.json`, and `report.md` follow this tension-positive convention, while `lateral_stress.png` is only a barostat diagnostic.
 
 For large `--orientation custom` runs, also inspect `initial_stress_xx_abs_bar`, `initial_stress_yy_abs_bar`, and `initial_stress_zz_abs_bar` in `summary.json`. If they remain large after equilibration, extend `--equil-steps` or retune the barostat before interpreting the tensile response.
 
