@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import random
 from collections import Counter
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ SUPPORTED_KINDS = (
     "crack",
     "notch",
     "void",
+    "bicrystal",
 )
 
 
@@ -49,6 +51,16 @@ def parse_vector(value: str | None) -> tuple[float, float, float] | None:
     parts = [float(x.strip()) for x in value.split(",")]
     if len(parts) != 3:
         raise ValueError(f"vector must have three comma-separated values, got {value}")
+    return tuple(parts)
+
+
+def parse_miller(value: str | Iterable[int]) -> tuple[int, int, int]:
+    if isinstance(value, str):
+        parts = [int(x.strip()) for x in value.split(",")]
+    else:
+        parts = [int(x) for x in value]
+    if len(parts) != 3:
+        raise ValueError(f"Miller index must have three integers, got {value}")
     return tuple(parts)
 
 
@@ -84,6 +96,24 @@ def _axis_unit_vectors(box_vectors: torch.Tensor) -> torch.Tensor:
 
 def _project_to_box_axes(coords: torch.Tensor, box_vectors: torch.Tensor) -> torch.Tensor:
     return coords.to(torch.float64) @ _axis_unit_vectors(box_vectors).T
+
+
+def _rotation_matrix(axis: torch.Tensor, angle_deg: float) -> torch.Tensor:
+    axis = axis.to(torch.float64)
+    axis = axis / torch.linalg.norm(axis).clamp_min(1e-12)
+    ux, uy, uz = axis.tolist()
+    angle = math.radians(float(angle_deg))
+    c = math.cos(angle)
+    s = math.sin(angle)
+    one_c = 1.0 - c
+    return torch.tensor(
+        [
+            [c + ux * ux * one_c, ux * uy * one_c - uz * s, ux * uz * one_c + uy * s],
+            [uy * ux * one_c + uz * s, c + uy * uy * one_c, uy * uz * one_c - ux * s],
+            [uz * ux * one_c - uy * s, uz * uy * one_c + ux * s, c + uz * uz * one_c],
+        ],
+        dtype=torch.float64,
+    )
 
 
 def _composition(atom_types: list[str]) -> dict[str, int]:
@@ -337,6 +367,184 @@ def _apply_notch(
     }
 
 
+def _remove_close_pairs_near_axis_plane(
+    coords: torch.Tensor,
+    atom_types: list[str],
+    box_vectors: torch.Tensor,
+    plane_axis: int,
+    plane_position: float,
+    cutoff_a: float,
+    search_width_a: float,
+) -> tuple[torch.Tensor, list[str], int]:
+    if cutoff_a <= 0.0:
+        return coords, atom_types, 0
+    coord_axis = _project_to_box_axes(coords, box_vectors)
+    near = torch.abs(coord_axis[:, plane_axis] - float(plane_position)) <= float(search_width_a)
+    near_idx = near.nonzero(as_tuple=False).flatten()
+    if near_idx.numel() < 2:
+        return coords, atom_types, 0
+    near_coords = coords[near_idx].to(torch.float64)
+    d = torch.cdist(near_coords, near_coords)
+    pair_i, pair_j = torch.where(torch.triu(d < float(cutoff_a), diagonal=1))
+    remove_local: set[int] = set()
+    for i, j in zip(pair_i.detach().cpu().tolist(), pair_j.detach().cpu().tolist()):
+        if i in remove_local or j in remove_local:
+            continue
+        # Remove the atom closer to the nominal GB plane.
+        ai = float(abs(coord_axis[int(near_idx[i]), plane_axis] - plane_position))
+        aj = float(abs(coord_axis[int(near_idx[j]), plane_axis] - plane_position))
+        remove_local.add(i if ai <= aj else j)
+    remove_global = {int(near_idx[i]) for i in remove_local}
+    keep = [i for i in range(coords.shape[0]) if i not in remove_global]
+    return coords[keep], [atom_types[i] for i in keep], len(remove_global)
+
+
+def _sigma_001_stgb(h: int, k: int) -> int:
+    raw = h * h + k * k
+    if h % 2 != 0 and k % 2 != 0:
+        return raw // 2
+    return raw
+
+
+def _enumerate_bcc_grain(
+    lattice_param: float,
+    rotation: torch.Tensor,
+    box_vectors: torch.Tensor,
+    y_min_frac: float,
+    y_max_frac: float,
+    margin_cells: int,
+    shift: torch.Tensor | None = None,
+) -> torch.Tensor:
+    lengths = _box_lengths(box_vectors)
+    max_extent = int(math.ceil(float(lengths.max().item()) / float(lattice_param))) + int(margin_cells)
+    basis = torch.tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]], dtype=torch.float64)
+    h_inv = torch.linalg.inv(box_vectors.to(torch.float64))
+    shift = torch.zeros(3, dtype=torch.float64) if shift is None else shift.to(torch.float64)
+    coords = []
+    for i in range(-max_extent, max_extent + 1):
+        for j in range(-max_extent, max_extent + 1):
+            for k in range(-max_extent, max_extent + 1):
+                cell = torch.tensor([i, j, k], dtype=torch.float64)
+                for b in basis:
+                    crystal = float(lattice_param) * (cell + b)
+                    cart = crystal @ rotation.T + shift
+                    frac = cart @ h_inv
+                    if (
+                        -1e-8 <= float(frac[0]) < 1.0 - 1e-8
+                        and y_min_frac - 1e-8 <= float(frac[1]) < y_max_frac - 1e-8
+                        and -1e-8 <= float(frac[2]) < 1.0 - 1e-8
+                    ):
+                        coords.append(cart)
+    if not coords:
+        return torch.empty((0, 3), dtype=torch.float64)
+    return torch.stack(coords, dim=0)
+
+
+def _deduplicate_by_fraction(coords: torch.Tensor, box_vectors: torch.Tensor, tol: float = 1e-7) -> torch.Tensor:
+    if coords.shape[0] == 0:
+        return coords
+    h_inv = torch.linalg.inv(box_vectors.to(torch.float64))
+    frac = coords.to(torch.float64) @ h_inv
+    frac = frac - torch.floor(frac)
+    seen = set()
+    keep = []
+    for idx, row in enumerate(frac.tolist()):
+        key = tuple(int(round(x / tol)) for x in row)
+        if key not in seen:
+            seen.add(key)
+            keep.append(idx)
+    return coords[keep]
+
+
+def _build_001_symmetric_tilt_bicrystal(
+    lattice_param: float,
+    replicas: tuple[int, int, int],
+    gb_plane: tuple[int, int, int],
+    overlap_cutoff_a: float,
+    gb_search_width_a: float,
+) -> tuple[torch.Tensor, list[str], torch.Tensor, dict]:
+    h, k, l = parse_miller(gb_plane)
+    if l != 0 or h <= 0 or k <= 0:
+        raise ValueError("current strict bicrystal builder supports only positive (h,k,0)[001] STGB")
+    g = math.gcd(h, k)
+    if g != 1:
+        raise ValueError("gb_plane h and k must be coprime for primitive CSL construction")
+    reps = parse_replicas(replicas)
+    norm = math.sqrt(h * h + k * k)
+    ex = torch.tensor([k / norm, -h / norm, 0.0], dtype=torch.float64)
+    ey = torch.tensor([h / norm, k / norm, 0.0], dtype=torch.float64)
+    ez = torch.tensor([0.0, 0.0, 1.0], dtype=torch.float64)
+
+    # CSL-periodic cell: x is in the GB plane, y is the GB normal, z is [001].
+    lx = float(lattice_param) * norm * int(reps[0])
+    ly = float(lattice_param) * norm * int(reps[1])
+    lz = float(lattice_param) * int(reps[2])
+    box_vectors = torch.stack([lx * ex, ly * ey, lz * ez], dim=0)
+
+    p_global = torch.stack([ex, ey, ez], dim=1)
+    p_a = torch.stack([ex, ey, ez], dim=1)
+    ex_b = torch.tensor([k / norm, h / norm, 0.0], dtype=torch.float64)
+    ey_b = torch.tensor([h / norm, -k / norm, 0.0], dtype=torch.float64)
+    p_b = torch.stack([ex_b, ey_b, ez], dim=1)
+    r_a = p_global @ p_a.T
+    r_b = p_global @ p_b.T
+
+    margin = max(h, k, 2) + max(reps)
+    grain_a = _enumerate_bcc_grain(
+        lattice_param, r_a, box_vectors, y_min_frac=0.0, y_max_frac=0.5, margin_cells=margin
+    )
+    grain_b = _enumerate_bcc_grain(
+        lattice_param, r_b, box_vectors, y_min_frac=0.5, y_max_frac=1.0, margin_cells=margin
+    )
+    coords = torch.cat([grain_a, grain_b], dim=0)
+    coords = _deduplicate_by_fraction(coords, box_vectors)
+    atom_types = ["W"] * int(coords.shape[0])
+
+    gb_position = 0.5 * ly
+    coords, atom_types, overlap_removed_mid = _remove_close_pairs_near_axis_plane(
+        coords,
+        atom_types,
+        box_vectors,
+        plane_axis=1,
+        plane_position=gb_position,
+        cutoff_a=overlap_cutoff_a,
+        search_width_a=max(float(gb_search_width_a), float(overlap_cutoff_a) * 2.0),
+    )
+    coords, atom_types, overlap_removed_periodic = _remove_close_pairs_near_axis_plane(
+        coords,
+        atom_types,
+        box_vectors,
+        plane_axis=1,
+        plane_position=0.0,
+        cutoff_a=overlap_cutoff_a,
+        search_width_a=max(float(gb_search_width_a), float(overlap_cutoff_a) * 2.0),
+    )
+
+    theta = math.degrees(2.0 * math.atan(k / h))
+    sigma = _sigma_001_stgb(h, k)
+    coord_axis = _project_to_box_axes(coords, box_vectors)
+    grain_a_count = int((coord_axis[:, 1] < gb_position).sum().item())
+    grain_b_count = int(coords.shape[0] - grain_a_count)
+    operations = {
+        "bicrystal_type": "csl_001_symmetric_tilt",
+        "gb_plane_hkl": [int(h), int(k), 0],
+        "tilt_axis_uvw": [0, 0, 1],
+        "sigma": int(sigma),
+        "misorientation_deg": float(theta),
+        "gb_axis": "y",
+        "gb_position_A": float(gb_position),
+        "periodic_gb_position_A": 0.0,
+        "overlap_cutoff_A": float(overlap_cutoff_a),
+        "gb_search_width_A": float(gb_search_width_a),
+        "overlap_removed_atoms": int(overlap_removed_mid + overlap_removed_periodic),
+        "grain_a_atoms": grain_a_count,
+        "grain_b_atoms": grain_b_count,
+        "csl_exact": True,
+        "note": "CSL-periodic BCC [001] symmetric tilt grain-boundary seed; relax and search rigid-body translations before production physics.",
+    }
+    return coords, atom_types, box_vectors, operations
+
+
 def build_w_structure(
     kind: str,
     orientation: str = "100",
@@ -361,21 +569,34 @@ def build_w_structure(
     notch_radius_a: float = 6.0,
     notch_depth_a: float = 6.0,
     notch_surface_side: str = "min",
+    gb_plane: tuple[int, int, int] = (3, 1, 0),
+    gb_overlap_cutoff_a: float = 2.0,
+    gb_search_width_a: float = 6.0,
 ) -> WStructureBuildResult:
     kind = kind.lower()
     if kind not in SUPPORTED_KINDS:
         raise ValueError(f"unsupported kind={kind}; supported={SUPPORTED_KINDS}")
     replicas = parse_replicas(replicas)
-    coords, box_vectors = generate_oriented_bcc_w(
-        lattice_param=lattice_param,
-        orientation=orientation,
-        replicas=replicas,
-    )
-    coords = coords.to(torch.float64)
-    box_vectors = box_vectors.to(torch.float64)
-    atom_types = ["W"] * int(coords.shape[0])
-    initial_atoms = int(coords.shape[0])
-    operations: dict = {}
+    if kind == "bicrystal":
+        coords, atom_types, box_vectors, operations = _build_001_symmetric_tilt_bicrystal(
+            lattice_param=lattice_param,
+            replicas=replicas,
+            gb_plane=gb_plane,
+            overlap_cutoff_a=gb_overlap_cutoff_a,
+            gb_search_width_a=gb_search_width_a,
+        )
+        initial_atoms = int(coords.shape[0] + operations["overlap_removed_atoms"])
+    else:
+        coords, box_vectors = generate_oriented_bcc_w(
+            lattice_param=lattice_param,
+            orientation=orientation,
+            replicas=replicas,
+        )
+        coords = coords.to(torch.float64)
+        box_vectors = box_vectors.to(torch.float64)
+        atom_types = ["W"] * int(coords.shape[0])
+        initial_atoms = int(coords.shape[0])
+        operations: dict = {}
 
     center = torch.tensor(defect_center, dtype=torch.float64) if defect_center is not None else None
     if kind == "surface":
@@ -437,7 +658,9 @@ def build_w_structure(
         "operations": operations,
         "notes": [
             "Geometry builder only; physical validity still requires relaxation with a suitable potential.",
-            "Dislocation and grain-boundary builders are intentionally deferred to a dedicated implementation.",
+            "Bicrystal output is an exact CSL-periodic [001] symmetric tilt seed for cubic BCC W.",
+            "Production grain-boundary physics still requires rigid-body translation search and relaxation.",
+            "Dislocation builders are intentionally deferred to a dedicated implementation.",
         ],
     }
     return WStructureBuildResult(coords=coords, atom_types=atom_types, box_vectors=box_vectors, summary=summary)

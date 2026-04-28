@@ -75,7 +75,7 @@ core/
 io_utils/
   reader.py               # AtomFileReader: XYZ → tensors + neighbor list
   w_bcc.py                # Oriented BCC-W structure generator
-  w_structure_builder.py  # Pure-W bulk/surface/defect/crack/notch builder
+  w_structure_builder.py  # Pure-W bulk/surface/defect/CSL-GB/crack/notch builder
   restart.py              # save_checkpoint / load_checkpoint
   writer.py / output_logger.py / eam_parser.py / ...
 
@@ -212,6 +212,7 @@ python run_scripts/build_w_structure.py --kind vacancy --orientation 100 --repli
 python run_scripts/build_w_structure.py --kind interstitial --orientation 100 --replicas 8,8,8 --interstitial-count 2
 python run_scripts/build_w_structure.py --kind substitution --orientation 100 --replicas 8,8,8 --substitution-element Re --substitution-count 8
 python run_scripts/build_w_structure.py --kind void --orientation 100 --replicas 12,12,12 --void-radius-A 8
+python run_scripts/build_w_structure.py --kind bicrystal --gb-plane 3,1,0 --replicas 8,6,6
 python run_scripts/build_w_structure.py --kind crack --orientation 100 --replicas 20,10,10 --crack-half-length-A 30 --crack-opening-A 2
 python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
 ```
@@ -223,7 +224,9 @@ Outputs are written under `run_output/w_structure_builder/<case>/`:
 - `composition.csv`
 - `preview.png`
 
-This is a geometry builder. It does not relax the structure or validate a potential. Dislocation and grain-boundary builders are intentionally deferred to the next implementation stage.
+`--kind bicrystal` is currently a strict CSL-periodic BCC `[001]` symmetric tilt grain-boundary seed. The default `--gb-plane 3,1,0` generates `Sigma5(310)[001]` with misorientation `36.8699 deg`. Other supported planes must be coprime positive `(h,k,0)` values.
+
+This is a geometry builder. It does not relax the structure or validate a potential. Grain-boundary production physics still requires rigid-body translation search and relaxation. Dislocation builders are intentionally deferred to the next implementation stage.
 
 Smoke test:
 

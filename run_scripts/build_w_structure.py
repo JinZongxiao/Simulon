@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from io_utils.w_structure_builder import (  # noqa: E402
     SUPPORTED_KINDS,
     build_w_structure,
+    parse_miller,
     parse_replicas,
     parse_vector,
     write_build_outputs,
@@ -52,6 +53,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notch-radius-A", type=float, default=6.0)
     p.add_argument("--notch-depth-A", type=float, default=6.0)
     p.add_argument("--notch-surface-side", choices=("min", "max"), default="min")
+
+    p.add_argument("--gb-plane", default="3,1,0", help="strict CSL [001] STGB plane as h,k,0; default is Sigma5(310)[001]")
+    p.add_argument("--gb-overlap-cutoff-A", type=float, default=2.0)
+    p.add_argument("--gb-search-width-A", type=float, default=6.0)
     return p
 
 
@@ -82,6 +87,9 @@ def run_build_w_structure(args) -> dict:
         notch_radius_a=args.notch_radius_A,
         notch_depth_a=args.notch_depth_A,
         notch_surface_side=args.notch_surface_side,
+        gb_plane=parse_miller(args.gb_plane),
+        gb_overlap_cutoff_a=args.gb_overlap_cutoff_A,
+        gb_search_width_a=args.gb_search_width_A,
     )
     case_name = args.case_name or f"{args.kind}_orientation_{args.orientation}"
     summary = write_build_outputs(result, args.output_dir, case_name=case_name)

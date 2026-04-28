@@ -75,7 +75,7 @@ core/
 io_utils/
   reader.py               # AtomFileReader：XYZ → 张量 + 邻居表
   w_bcc.py                # 取向 BCC-W 结构生成
-  w_structure_builder.py  # 纯 W bulk/surface/defect/crack/notch 结构生成器
+  w_structure_builder.py  # 纯 W bulk/surface/defect/CSL-GB/crack/notch 结构生成器
   restart.py              # save_checkpoint / load_checkpoint
   writer.py / output_logger.py / eam_parser.py / ...
 
@@ -212,6 +212,7 @@ python run_scripts/build_w_structure.py --kind vacancy --orientation 100 --repli
 python run_scripts/build_w_structure.py --kind interstitial --orientation 100 --replicas 8,8,8 --interstitial-count 2
 python run_scripts/build_w_structure.py --kind substitution --orientation 100 --replicas 8,8,8 --substitution-element Re --substitution-count 8
 python run_scripts/build_w_structure.py --kind void --orientation 100 --replicas 12,12,12 --void-radius-A 8
+python run_scripts/build_w_structure.py --kind bicrystal --gb-plane 3,1,0 --replicas 8,6,6
 python run_scripts/build_w_structure.py --kind crack --orientation 100 --replicas 20,10,10 --crack-half-length-A 30 --crack-opening-A 2
 python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
 ```
@@ -223,7 +224,9 @@ python run_scripts/build_w_structure.py --kind notch --orientation 100 --replica
 - `composition.csv`
 - `preview.png`
 
-这是几何结构生成器，不负责结构弛豫，也不等价于势函数物理验证。位错和晶界生成器留到下一阶段单独实现。
+`--kind bicrystal` 目前是严格 CSL 周期的 BCC `[001]` 对称倾转晶界种子。默认 `--gb-plane 3,1,0` 会生成 `Sigma5(310)[001]`，失配角为 `36.8699 deg`。其它晶界面必须是互素正整数 `(h,k,0)`。
+
+这是几何结构生成器，不负责结构弛豫，也不等价于势函数物理验证。晶界生产模拟仍然需要刚体平移搜索和结构弛豫。位错生成器留到下一阶段单独实现。
 
 Smoke test：
 

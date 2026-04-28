@@ -40,6 +40,7 @@ Supported first-stage kinds:
 - `interstitial`
 - `substitution`
 - `void`
+- `bicrystal`
 - `crack`
 - `notch`
 
@@ -50,6 +51,7 @@ python run_scripts/build_w_structure.py --kind bulk --orientation 100 --replicas
 python run_scripts/build_w_structure.py --kind surface --orientation 110 --replicas 10,10,6 --vacuum-A 30
 python run_scripts/build_w_structure.py --kind vacancy --orientation 100 --replicas 10,10,10 --vacancy-count 5
 python run_scripts/build_w_structure.py --kind void --orientation 100 --replicas 12,12,12 --void-radius-A 8
+python run_scripts/build_w_structure.py --kind bicrystal --gb-plane 3,1,0 --replicas 8,6,6
 python run_scripts/build_w_structure.py --kind crack --orientation 100 --replicas 20,10,10 --crack-half-length-A 30 --crack-opening-A 2
 python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
 ```
@@ -61,7 +63,9 @@ Each case writes:
 - `composition.csv`
 - `preview.png`
 
-Important limitation: this builder only creates geometry. It does not relax the structure and does not prove physical stability. Grain boundaries and dislocations are deliberately deferred because they need dedicated crystallographic construction and validation.
+`bicrystal` currently means a CSL-periodic BCC `[001]` symmetric tilt grain-boundary seed. The default `--gb-plane 3,1,0` is `Sigma5(310)[001]` with misorientation `36.8699 deg`; `--gb-plane 2,1,0` gives the other common `Sigma5(210)[001]` branch with misorientation `53.1301 deg`. The summary records `sigma`, `misorientation_deg`, `gb_plane_hkl`, `tilt_axis_uvw`, grain atom counts, and whether the construction is CSL-exact.
+
+Important limitation: this builder only creates geometry. It does not relax the structure and does not prove physical stability. Grain-boundary production work still needs rigid-body translation search and relaxation. Dislocations are deliberately deferred because they need a dedicated elastic displacement field and core validation.
 
 ## Common Parameters
 

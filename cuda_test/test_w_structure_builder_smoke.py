@@ -44,6 +44,7 @@ def main():
         "void": ["--void-radius-A", "4.0"],
         "crack": ["--crack-half-length-A", "8.0", "--crack-opening-A", "2.5"],
         "notch": ["--notch-radius-A", "5.0", "--notch-depth-A", "5.0"],
+        "bicrystal": ["--gb-plane", "3,1,0", "--gb-overlap-cutoff-A", "1.6"],
     }
     summaries = {}
     for kind, extra in cases.items():
@@ -68,6 +69,12 @@ def main():
     assert summaries["void"]["final_atom_count"] < summaries["bulk"]["final_atom_count"]
     assert summaries["crack"]["final_atom_count"] < summaries["bulk"]["final_atom_count"]
     assert summaries["notch"]["final_atom_count"] < summaries["bulk"]["final_atom_count"]
+    assert summaries["bicrystal"]["final_atom_count"] > 0
+    assert summaries["bicrystal"]["operations"]["bicrystal_type"] == "csl_001_symmetric_tilt"
+    assert summaries["bicrystal"]["operations"]["sigma"] == 5
+    assert summaries["bicrystal"]["operations"]["csl_exact"] is True
+    assert summaries["bicrystal"]["operations"]["grain_a_atoms"] > 0
+    assert summaries["bicrystal"]["operations"]["grain_b_atoms"] > 0
     print("W structure builder smoke test passed.")
 
 
