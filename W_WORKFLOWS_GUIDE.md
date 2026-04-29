@@ -5,6 +5,7 @@
 This guide documents the pure-W structure builder, the four independent pure-W mechanics workflows in Simulon, plus one auxiliary bulk-relax preparation workflow:
 
 - `run_scripts/build_w_structure.py`
+- `run_scripts/w_gb_search.py`
 - `run_scripts/w_bulk_relax.py`
 - `run_scripts/w_tensile.py`
 - `run_scripts/w_indent.py`
@@ -23,6 +24,7 @@ Every workflow accepts `--output-dir`. Outputs are grouped by orientation undern
 - dbtt: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/` with temperature subdirectories inside
 - bulk relax: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 - structure builder: `.../<case_name>/`
+- grain-boundary search: `.../<case_name>/`
 
 When `--orientation custom` is used, the same layout becomes `.../orientation_custom/`.
 
@@ -82,6 +84,94 @@ Each case writes:
 `bicrystal` currently means a CSL-periodic BCC `[001]` symmetric tilt grain-boundary seed. The default `--gb-plane 3,1,0` is `Sigma5(310)[001]` with misorientation `36.8699 deg`; `--gb-plane 2,1,0` gives the other common `Sigma5(210)[001]` branch with misorientation `53.1301 deg`. The summary records `sigma`, `misorientation_deg`, `gb_plane_hkl`, `tilt_axis_uvw`, grain atom counts, and whether the construction is CSL-exact.
 
 Important limitation: builder relaxation is fixed-box steepest descent. It is intended to remove severe local forces after construction, not to replace production NVT/NPT relaxation. Grain-boundary production work still needs rigid-body translation search and relaxation. Dislocations are deliberately deferred because they need a dedicated elastic displacement field and core validation.
+
+## Grain-Boundary Rigid-Body Translation Search
+
+Script: `run_scripts/w_gb_search.py`
+
+Purpose: start from the strict CSL bicrystal construction, scan rigid-body translations of one grain in the GB plane, relax every candidate with fixed-box steepest descent, and report the lowest-energy GB candidate.
+
+Default geometry:
+
+- `--gb-plane 3,1,0`: `Sigma5(310)[001]` BCC W symmetric tilt boundary
+- two periodic GBs in the simulation cell
+- translation grid in the GB plane: `x` and `z`
+
+Example:
+
+```bash
+python run_scripts/w_gb_search.py \
+  --gb-plane 3,1,0 \
+  --replicas 8,6,6 \
+  --translations-x 5 \
+  --translations-z 3 \
+  --relax-steps 500 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/w_gb_search
+```
+
+Production-style starting point:
+
+```bash
+python run_scripts/w_gb_search.py \
+  --gb-plane 3,1,0 \
+  --replicas 12,8,8 \
+  --translations-x 7 \
+  --translations-z 5 \
+  --gb-overlap-cutoff-A 1.6 \
+  --gb-search-width-A 6.0 \
+  --relax-steps 1000 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/prod_w_gb_search_sigma5_310_001
+```
+
+Key parameters:
+
+- `--gb-plane`
+  Physical meaning: CSL boundary plane `(h,k,0)` for a BCC `[001]` symmetric tilt boundary. `h` and `k` must be coprime positive integers.
+- `--translations-x`, `--translations-z`
+  Physical meaning: rigid-body translation grid counts along the two in-plane directions. Larger grids are more expensive but reduce the chance of selecting a bad microscopic GB state.
+- `--gb-overlap-cutoff-A`
+  Physical meaning: close-pair removal distance near the GB planes before relaxation.
+- `--gb-search-width-A`
+  Engineering meaning: spatial window around each periodic GB plane used for overlap cleanup.
+- `--bulk-energy-per-atom-ev`
+  Physical meaning: bulk W reference energy used in the GB excess-energy formula. Default is `auto`, which evaluates a BCC W bulk reference with the same EAM file and lattice parameter. Prefer `auto` unless you intentionally want to compare against an external reference.
+- `--bulk-reference-replicas`
+  Engineering meaning: optional bulk reference supercell for `auto`; defaults to the same `--replicas`.
+- `--relax-steps`, `--relax-step-size-A`, `--relax-force-threshold`
+  Engineering meaning: fixed-box steepest-descent relaxation controls for each candidate.
+
+Outputs:
+
+- `candidates.csv`
+  One row per translation candidate, including shift, atom count, relaxed energy, energy per atom, and final force.
+- `best_structure.xyz`
+  The lowest-energy unrelaxed candidate.
+- `best_relaxed_structure.xyz`
+  The lowest-energy relaxed candidate for downstream production relaxation.
+- `gb_energy_report.json`
+  Machine-readable GB-energy report.
+- `summary.json`
+  Workflow-level summary with the embedded `best` report.
+
+`gb_energy_report.json` fields:
+
+- `bulk_reference`
+  Records whether the bulk reference was `auto` or user-supplied. For `auto`, it includes the reference structure, atom count, total energy, and eV/atom.
+- `gb_energy_J_m2`
+  Excess grain-boundary energy in J/m^2:
+  `(E_GB - N * E_bulk_per_atom) / (2 * A_GB)`.
+- `gb_energy_valid`
+  Conservative sanity flag requiring positive GB energy and a small energy-per-atom offset from the bulk reference. If this is false, do not use the candidate for production.
+- `csl_exact`
+  Whether the bicrystal construction used the explicit CSL geometry path.
+
+Smoke test:
+
+```bash
+python cuda_test/test_w_gb_search_smoke.py
+```
 
 ## Common Parameters
 

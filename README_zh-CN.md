@@ -21,6 +21,7 @@
 | **W 纳米压痕** | 新增 `run_scripts/w_indent.py`：球形压头加载、底层固定 W slab、载荷-深度输出和 smoke test |
 | **W 裂纹** | 新增 `run_scripts/w_crack.py`：中心预裂纹生成、刚性 grip 开口位移加载、应力-CMOD 输出和 smoke test |
 | **W DBTT** | 新增 `run_scripts/w_dbtt_scan.py` 和 `postprocess/dbtt.py`：基于裂纹开口的温度扫描与 DBTT 趋势分析 |
+| **W 晶界** | 新增严格 CSL `[001]` bicrystal 构型、刚体平移搜索和晶界能报告 |
 | **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
 
 ---
@@ -84,6 +85,7 @@ postprocess/
   indentation.py          # 载荷-深度摘要 + PNG 绘图
   crack.py                # 应力-CMOD 摘要 + PNG 绘图
   dbtt.py                 # 温度扫描聚合 + PNG 绘图
+  grain_boundary.py       # 晶界 excess energy 报告
 
 cuda source/
   neighbor_search_kernel.cu
@@ -101,6 +103,7 @@ run_scripts/
   w_dbtt_scan.py          # 钨 DBTT 温度扫描
   w_batch_report.py       # W 力学批量运行与汇总报告
   build_w_structure.py    # 纯 W 结构生成器 CLI
+  w_gb_search.py          # CSL 晶界刚体平移搜索
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
@@ -248,6 +251,43 @@ Smoke test：
 
 ```bash
 python cuda_test/test_w_structure_builder_smoke.py
+```
+
+### 6b. W CSL 晶界搜索
+
+晶界模拟不要直接把原始 bicrystal seed 当成最终模型。先做刚体平移搜索，对每个候选结构弛豫，再按 excess GB energy 排序：
+
+```bash
+python run_scripts/w_gb_search.py \
+  --gb-plane 3,1,0 \
+  --replicas 8,6,6 \
+  --translations-x 5 \
+  --translations-z 3 \
+  --relax-steps 500 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/w_gb_search
+```
+
+关键参数：
+
+- `--gb-plane`：互素正整数 `(h,k,0)` CSL 晶界面。默认 `3,1,0` 是 `Sigma5(310)[001]`。
+- `--translations-x`, `--translations-z`：晶界面内刚体平移网格。
+- `--gb-overlap-cutoff-A`：两个周期晶界附近的近距离原子删除阈值。
+- `--bulk-energy-per-atom-ev`：默认 `auto`。脚本会用同一个 EAM 文件自动计算匹配的 BCC bulk reference，避免硬编码 cohesive energy。
+- `--bulk-reference-replicas`：自动 bulk reference 的可选超胞尺寸。
+
+输出位于 `run_output/w_gb_search/<case>/`：
+
+- `candidates.csv`
+- `best_structure.xyz`
+- `best_relaxed_structure.xyz`
+- `gb_energy_report.json`
+- `summary.json`
+
+Smoke test：
+
+```bash
+python cuda_test/test_w_gb_search_smoke.py
 ```
 
 ### 7. W 拉伸工作流

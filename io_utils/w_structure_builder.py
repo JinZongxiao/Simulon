@@ -98,6 +98,14 @@ def _project_to_box_axes(coords: torch.Tensor, box_vectors: torch.Tensor) -> tor
     return coords.to(torch.float64) @ _axis_unit_vectors(box_vectors).T
 
 
+def _wrap_to_box(coords: torch.Tensor, box_vectors: torch.Tensor) -> torch.Tensor:
+    h = box_vectors.to(torch.float64)
+    h_inv = torch.linalg.inv(h)
+    frac = coords.to(torch.float64) @ h_inv
+    frac = frac - torch.floor(frac)
+    return frac @ h
+
+
 def _rotation_matrix(axis: torch.Tensor, angle_deg: float) -> torch.Tensor:
     axis = axis.to(torch.float64)
     axis = axis / torch.linalg.norm(axis).clamp_min(1e-12)
@@ -453,7 +461,7 @@ def _deduplicate_by_fraction(coords: torch.Tensor, box_vectors: torch.Tensor, to
         if key not in seen:
             seen.add(key)
             keep.append(idx)
-    return coords[keep]
+    return (frac[keep] @ box_vectors.to(torch.float64))
 
 
 def _build_001_symmetric_tilt_bicrystal(
@@ -462,6 +470,7 @@ def _build_001_symmetric_tilt_bicrystal(
     gb_plane: tuple[int, int, int],
     overlap_cutoff_a: float,
     gb_search_width_a: float,
+    grain_b_translation_frac: tuple[float, float, float] | None = None,
 ) -> tuple[torch.Tensor, list[str], torch.Tensor, dict]:
     h, k, l = parse_miller(gb_plane)
     if l != 0 or h <= 0 or k <= 0:
@@ -483,19 +492,27 @@ def _build_001_symmetric_tilt_bicrystal(
 
     p_global = torch.stack([ex, ey, ez], dim=1)
     p_a = torch.stack([ex, ey, ez], dim=1)
-    ex_b = torch.tensor([k / norm, h / norm, 0.0], dtype=torch.float64)
-    ey_b = torch.tensor([h / norm, -k / norm, 0.0], dtype=torch.float64)
-    p_b = torch.stack([ex_b, ey_b, ez], dim=1)
     r_a = p_global @ p_a.T
-    r_b = p_global @ p_b.T
+    # The second grain must be a proper rotation, not a mirror reflection.
+    # For a (h k 0)[001] symmetric tilt boundary, theta = 2 atan(k / h).
+    theta = math.degrees(2.0 * math.atan(k / h))
+    r_b = _rotation_matrix(ez, theta)
 
     margin = max(h, k, 2) + max(reps)
     grain_a = _enumerate_bcc_grain(
         lattice_param, r_a, box_vectors, y_min_frac=0.0, y_max_frac=0.5, margin_cells=margin
     )
+    translation_frac = torch.tensor(
+        grain_b_translation_frac or (0.0, 0.0, 0.0),
+        dtype=torch.float64,
+    )
+    translation_cart = translation_frac @ box_vectors
     grain_b = _enumerate_bcc_grain(
         lattice_param, r_b, box_vectors, y_min_frac=0.5, y_max_frac=1.0, margin_cells=margin
     )
+    if grain_b.shape[0] > 0:
+        grain_b = grain_b + translation_cart.reshape(1, 3)
+        grain_b = _wrap_to_box(grain_b, box_vectors)
     coords = torch.cat([grain_a, grain_b], dim=0)
     coords = _deduplicate_by_fraction(coords, box_vectors)
     atom_types = ["W"] * int(coords.shape[0])
@@ -520,7 +537,6 @@ def _build_001_symmetric_tilt_bicrystal(
         search_width_a=max(float(gb_search_width_a), float(overlap_cutoff_a) * 2.0),
     )
 
-    theta = math.degrees(2.0 * math.atan(k / h))
     sigma = _sigma_001_stgb(h, k)
     coord_axis = _project_to_box_axes(coords, box_vectors)
     grain_a_count = int((coord_axis[:, 1] < gb_position).sum().item())
@@ -537,6 +553,8 @@ def _build_001_symmetric_tilt_bicrystal(
         "overlap_cutoff_A": float(overlap_cutoff_a),
         "gb_search_width_A": float(gb_search_width_a),
         "overlap_removed_atoms": int(overlap_removed_mid + overlap_removed_periodic),
+        "grain_b_translation_frac": [float(x) for x in translation_frac.tolist()],
+        "grain_b_translation_A": [float(x) for x in translation_cart.tolist()],
         "grain_a_atoms": grain_a_count,
         "grain_b_atoms": grain_b_count,
         "csl_exact": True,
@@ -572,6 +590,7 @@ def build_w_structure(
     gb_plane: tuple[int, int, int] = (3, 1, 0),
     gb_overlap_cutoff_a: float = 2.0,
     gb_search_width_a: float = 6.0,
+    gb_translation_frac: tuple[float, float, float] | None = None,
 ) -> WStructureBuildResult:
     kind = kind.lower()
     if kind not in SUPPORTED_KINDS:
@@ -584,6 +603,7 @@ def build_w_structure(
             gb_plane=gb_plane,
             overlap_cutoff_a=gb_overlap_cutoff_a,
             gb_search_width_a=gb_search_width_a,
+            grain_b_translation_frac=gb_translation_frac,
         )
         initial_atoms = int(coords.shape[0] + operations["overlap_removed_atoms"])
     else:

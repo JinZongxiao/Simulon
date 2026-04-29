@@ -21,6 +21,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 | **W indentation** | Added `run_scripts/w_indent.py` with spherical indenter loading, fixed-bottom W slabs, load-depth output, and smoke-test coverage |
 | **W crack** | Added `run_scripts/w_crack.py` with center precrack generation, rigid-grip opening, stress-CMOD output, and smoke-test coverage |
 | **W DBTT** | Added `run_scripts/w_dbtt_scan.py` and `postprocess/dbtt.py` for crack-based temperature scans and DBTT trend plots |
+| **W grain boundary** | Added strict CSL `[001]` bicrystal construction plus rigid-body translation search and GB-energy reporting |
 | **Performance** | ~384 steps/s on RTX 3050 for 100-atom Ar NVT |
 
 ---
@@ -84,6 +85,7 @@ postprocess/
   indentation.py          # Load-depth summary + PNG plot
   crack.py                # Stress-CMOD summary + PNG plot
   dbtt.py                 # Temperature-scan aggregation + PNG plot
+  grain_boundary.py       # GB excess-energy reporting
 
 cuda source/
   neighbor_search_kernel.cu
@@ -101,6 +103,7 @@ run_scripts/
   w_dbtt_scan.py          # Tungsten DBTT temperature scan
   w_batch_report.py       # Combined W workflow runner + report export
   build_w_structure.py    # Pure-W structure builder CLI
+  w_gb_search.py          # CSL grain-boundary rigid-body translation search
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
 
@@ -248,6 +251,43 @@ Smoke test:
 
 ```bash
 python cuda_test/test_w_structure_builder_smoke.py
+```
+
+### 6b. W CSL grain-boundary search
+
+For grain-boundary work, do not use the raw bicrystal seed as the final model. Run a rigid-body translation search, relax every candidate, and rank by excess GB energy:
+
+```bash
+python run_scripts/w_gb_search.py \
+  --gb-plane 3,1,0 \
+  --replicas 8,6,6 \
+  --translations-x 5 \
+  --translations-z 3 \
+  --relax-steps 500 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/w_gb_search
+```
+
+Key options:
+
+- `--gb-plane`: coprime positive `(h,k,0)` CSL plane. Default `3,1,0` is `Sigma5(310)[001]`.
+- `--translations-x`, `--translations-z`: rigid-body translation grid in the GB plane.
+- `--gb-overlap-cutoff-A`: close-contact removal cutoff near the two periodic GB planes.
+- `--bulk-energy-per-atom-ev`: use `auto` by default. The script evaluates a matching BCC bulk reference with the same EAM path instead of relying on a hard-coded cohesive energy.
+- `--bulk-reference-replicas`: optional size for the automatic bulk reference.
+
+Outputs are written under `run_output/w_gb_search/<case>/`:
+
+- `candidates.csv`
+- `best_structure.xyz`
+- `best_relaxed_structure.xyz`
+- `gb_energy_report.json`
+- `summary.json`
+
+Smoke test:
+
+```bash
+python cuda_test/test_w_gb_search_smoke.py
 ```
 
 ### 7. W tensile workflow
