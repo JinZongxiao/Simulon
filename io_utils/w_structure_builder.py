@@ -810,6 +810,7 @@ def relax_structure_steepest_descent(
     print_interval: int = 50,
     max_backtracks: int = 10,
     skin_thickness: float = 1.0,
+    method: str = "sd",
 ) -> dict:
     output_dir = Path(output_dir)
     model, mol, device = _build_eam_model_for_coords(structure_path, box_vectors, eam_path, skin_thickness)
@@ -828,6 +829,10 @@ def relax_structure_steepest_descent(
         force_norm = torch.linalg.norm(forces, dim=1)
         return out, forces, float(force_norm.max().item()), float(force_norm.mean().item())
 
+    method = str(method).lower()
+    if method not in ("sd", "fire"):
+        raise ValueError(f"unsupported relaxation method={method}; expected 'sd' or 'fire'")
+
     with torch.no_grad():
         out, forces, max_force, mean_force = evaluate()
         initial_energy = float(out["energy"].item())
@@ -842,49 +847,105 @@ def relax_structure_steepest_descent(
         )
         current_energy = initial_energy
 
-        for step in range(1, int(max_steps) + 1):
-            out, forces, max_force, mean_force = evaluate()
-            if max_force <= float(force_threshold):
-                converged = True
-                stop_reason = "force_threshold_reached"
-                current_energy = float(out["energy"].item())
-                break
-
-            direction = forces / torch.linalg.norm(forces, dim=1, keepdim=True).clamp_min(1e-12)
-            coords0 = mol.coordinates.detach().clone()
-            base_energy = float(out["energy"].item())
-            trial_step = float(step_size)
-            accepted = False
-            accepted_energy = base_energy
-
-            for _ in range(int(max_backtracks)):
-                trial = coords0 + trial_step * direction
-                mol.update_coordinates(trial)
-                trial_energy = float(model.sum_bone()["energy"].item())
-                if trial_energy < base_energy:
-                    accepted = True
-                    accepted_energy = trial_energy
+        if method == "sd":
+            for step in range(1, int(max_steps) + 1):
+                out, forces, max_force, mean_force = evaluate()
+                if max_force <= float(force_threshold):
+                    converged = True
+                    stop_reason = "force_threshold_reached"
+                    current_energy = float(out["energy"].item())
                     break
-                trial_step *= 0.5
 
-            if not accepted:
-                mol.update_coordinates(coords0)
-                stop_reason = "line_search_failed"
-                current_energy = base_energy
-                break
+                direction = forces / torch.linalg.norm(forces, dim=1, keepdim=True).clamp_min(1e-12)
+                coords0 = mol.coordinates.detach().clone()
+                base_energy = float(out["energy"].item())
+                trial_step = float(step_size)
+                accepted = False
+                accepted_energy = base_energy
 
-            current_energy = accepted_energy
-            if step % max(1, int(print_interval)) == 0 or step == int(max_steps):
-                out_now, _, max_f_now, mean_f_now = evaluate()
-                rows.append(
-                    {
-                        "step": step,
-                        "energy_ev": float(out_now["energy"].item()),
-                        "max_force_ev_A": max_f_now,
-                        "mean_force_ev_A": mean_f_now,
-                        "accepted_step_A": trial_step,
-                    }
-                )
+                for _ in range(int(max_backtracks)):
+                    trial = coords0 + trial_step * direction
+                    mol.update_coordinates(trial)
+                    trial_energy = float(model.sum_bone()["energy"].item())
+                    if trial_energy < base_energy:
+                        accepted = True
+                        accepted_energy = trial_energy
+                        break
+                    trial_step *= 0.5
+
+                if not accepted:
+                    mol.update_coordinates(coords0)
+                    stop_reason = "line_search_failed"
+                    current_energy = base_energy
+                    break
+
+                current_energy = accepted_energy
+                if step % max(1, int(print_interval)) == 0 or step == int(max_steps):
+                    out_now, _, max_f_now, mean_f_now = evaluate()
+                    rows.append(
+                        {
+                            "step": step,
+                            "energy_ev": float(out_now["energy"].item()),
+                            "max_force_ev_A": max_f_now,
+                            "mean_force_ev_A": mean_f_now,
+                            "accepted_step_A": trial_step,
+                        }
+                    )
+        else:
+            velocity = torch.zeros_like(mol.coordinates)
+            dt_fire = float(step_size)
+            dt_max = max(float(step_size) * 20.0, float(step_size))
+            max_disp = max(float(step_size) * 2.0, 1e-6)
+            alpha = 0.1
+            alpha_start = 0.1
+            f_inc = 1.1
+            f_dec = 0.5
+            f_alpha = 0.99
+            n_min = 5
+            n_positive = 0
+
+            for step in range(1, int(max_steps) + 1):
+                out, forces, max_force, mean_force = evaluate()
+                current_energy = float(out["energy"].item())
+                if max_force <= float(force_threshold):
+                    converged = True
+                    stop_reason = "force_threshold_reached"
+                    break
+
+                velocity = velocity + dt_fire * forces
+                power = float((velocity * forces).sum().item())
+                if power > 0.0:
+                    n_positive += 1
+                    v_norm = torch.linalg.norm(velocity)
+                    f_norm = torch.linalg.norm(forces)
+                    if v_norm > 0.0 and f_norm > 0.0:
+                        velocity = (1.0 - alpha) * velocity + alpha * (v_norm / f_norm) * forces
+                    if n_positive > n_min:
+                        dt_fire = min(dt_fire * f_inc, dt_max)
+                        alpha *= f_alpha
+                else:
+                    n_positive = 0
+                    dt_fire *= f_dec
+                    alpha = alpha_start
+                    velocity.zero_()
+
+                displacement = dt_fire * velocity
+                disp_norm = torch.linalg.norm(displacement, dim=1, keepdim=True)
+                scale = torch.clamp(max_disp / disp_norm.clamp_min(1e-12), max=1.0)
+                displacement = displacement * scale
+                mol.update_coordinates(mol.coordinates + displacement)
+
+                if step % max(1, int(print_interval)) == 0 or step == int(max_steps):
+                    out_now, _, max_f_now, mean_f_now = evaluate()
+                    rows.append(
+                        {
+                            "step": step,
+                            "energy_ev": float(out_now["energy"].item()),
+                            "max_force_ev_A": max_f_now,
+                            "mean_force_ev_A": mean_f_now,
+                            "accepted_step_A": float(torch.linalg.norm(displacement, dim=1).max().item()),
+                        }
+                    )
 
         out_final, _, final_max_force, final_mean_force = evaluate()
         final_energy = float(out_final["energy"].item())
@@ -902,10 +963,10 @@ def relax_structure_steepest_descent(
         relaxed_path,
         coords,
         atom_types,
-        comment=f"relaxed by Simulon WStructureBuilder fixed-box SD, energy={final_energy:.8f} eV",
+        comment=f"relaxed by Simulon WStructureBuilder fixed-box {method.upper()}, energy={final_energy:.8f} eV",
     )
     summary = {
-        "relaxation_method": "fixed_box_steepest_descent",
+        "relaxation_method": f"fixed_box_{method}",
         "eam": str(eam_path),
         "device": str(device),
         "max_steps": int(max_steps),

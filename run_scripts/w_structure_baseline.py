@@ -47,7 +47,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--eam", default=str(_project_root() / "run_data" / "W" / "WRe_YC2.eam.fs"))
     p.add_argument("--output-dir", default=str(_project_root() / "run_output" / "prod_w_structure_baseline"))
 
-    p.add_argument("--relax-steps", type=int, default=1000)
+    p.add_argument("--relax-method", choices=("sd", "fire"), default="fire")
+    p.add_argument("--relax-steps", type=int, default=3000)
     p.add_argument("--relax-step-size-A", type=float, default=0.01)
     p.add_argument("--relax-force-threshold", type=float, default=0.05)
     p.add_argument("--relax-print-interval", type=int, default=100)
@@ -175,6 +176,7 @@ def _run_build_case(case: BaselineCase, args, cases_dir: Path) -> dict:
             step_size=args.relax_step_size_A,
             force_threshold=args.relax_force_threshold,
             print_interval=args.relax_print_interval,
+            method=args.relax_method,
         )
         summary["relaxation"] = relax_summary
         Path(summary["summary"]).write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -322,6 +324,9 @@ def run_w_structure_baseline(args) -> dict:
         "orientation": args.orientation,
         "lattice_param_A": float(args.lattice_param),
         "eam": str(args.eam),
+        "relax_method": args.relax_method,
+        "relax_steps": int(args.relax_steps),
+        "relax_force_threshold_ev_A": float(args.relax_force_threshold),
         "output_dir": str(output_dir),
         "case_count": len(rows),
         "passed_case_count": passed,

@@ -59,7 +59,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gb-overlap-cutoff-A", type=float, default=2.0)
     p.add_argument("--gb-search-width-A", type=float, default=6.0)
 
-    p.add_argument("--relax", action="store_true", help="run fixed-box steepest-descent relaxation after building")
+    p.add_argument("--relax", action="store_true", help="run fixed-box geometry relaxation after building")
+    p.add_argument("--relax-method", choices=("sd", "fire"), default="sd")
     p.add_argument("--eam", default=str(_project_root() / "run_data" / "W" / "WRe_YC2.eam.fs"))
     p.add_argument("--relax-steps", type=int, default=500)
     p.add_argument("--relax-step-size-A", type=float, default=0.01)
@@ -112,6 +113,7 @@ def run_build_w_structure(args) -> dict:
             step_size=args.relax_step_size_A,
             force_threshold=args.relax_force_threshold,
             print_interval=args.relax_print_interval,
+            method=args.relax_method,
         )
         summary["relaxation"] = relax_summary
         summary_path = Path(summary["summary"])

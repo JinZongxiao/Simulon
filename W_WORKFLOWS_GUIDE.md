@@ -99,7 +99,8 @@ Production command:
 python run_scripts/w_structure_baseline.py \
   --preset production \
   --orientation 100 \
-  --relax-steps 1000 \
+  --relax-method fire \
+  --relax-steps 3000 \
   --relax-force-threshold 0.05 \
   --output-dir run_output/prod_w_structure_baseline
 ```
@@ -135,6 +136,8 @@ Important fields:
   Stronger than `acceptance_pass`. For ordinary structures, the final maximum force must satisfy `--relax-force-threshold`; for GB search, the GB-energy sanity criteria must also pass.
 - `relax_force_pass`
   Whether the final fixed-box relaxation force is below threshold.
+- `--relax-method`
+  Engineering meaning: fixed-box relaxation algorithm. `fire` is recommended for production defect seeds; `sd` preserves the original steepest-descent path for simple smoke/debug runs.
 
 Smoke test:
 

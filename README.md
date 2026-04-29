@@ -263,7 +263,8 @@ Run the full pure-W structure baseline matrix before ODS-W embedding or defect-m
 python run_scripts/w_structure_baseline.py \
   --preset production \
   --orientation 100 \
-  --relax-steps 1000 \
+  --relax-method fire \
+  --relax-steps 3000 \
   --relax-force-threshold 0.05 \
   --output-dir run_output/prod_w_structure_baseline
 ```
