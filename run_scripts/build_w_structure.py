@@ -11,6 +11,7 @@ from io_utils.w_structure_builder import (  # noqa: E402
     parse_miller,
     parse_replicas,
     parse_vector,
+    relax_structure_steepest_descent,
     write_build_outputs,
 )
 
@@ -57,6 +58,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gb-plane", default="3,1,0", help="strict CSL [001] STGB plane as h,k,0; default is Sigma5(310)[001]")
     p.add_argument("--gb-overlap-cutoff-A", type=float, default=2.0)
     p.add_argument("--gb-search-width-A", type=float, default=6.0)
+
+    p.add_argument("--relax", action="store_true", help="run fixed-box steepest-descent relaxation after building")
+    p.add_argument("--eam", default=str(_project_root() / "run_data" / "W" / "WRe_YC2.eam.fs"))
+    p.add_argument("--relax-steps", type=int, default=500)
+    p.add_argument("--relax-step-size-A", type=float, default=0.01)
+    p.add_argument("--relax-force-threshold", type=float, default=0.05)
+    p.add_argument("--relax-print-interval", type=int, default=50)
     return p
 
 
@@ -93,8 +101,27 @@ def run_build_w_structure(args) -> dict:
     )
     case_name = args.case_name or f"{args.kind}_orientation_{args.orientation}"
     summary = write_build_outputs(result, args.output_dir, case_name=case_name)
+    if args.relax:
+        relax_summary = relax_structure_steepest_descent(
+            structure_path=summary["structure"],
+            box_vectors=result.box_vectors,
+            atom_types=result.atom_types,
+            eam_path=args.eam,
+            output_dir=summary["output_dir"],
+            max_steps=args.relax_steps,
+            step_size=args.relax_step_size_A,
+            force_threshold=args.relax_force_threshold,
+            print_interval=args.relax_print_interval,
+        )
+        summary["relaxation"] = relax_summary
+        summary_path = Path(summary["summary"])
+        import json
+
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"W structure build completed: {summary['structure']}")
     print(f"Summary: {summary['summary']}")
+    if args.relax:
+        print(f"Relaxed structure: {summary['relaxation']['relaxed_structure']}")
     if summary.get("preview"):
         print(f"Preview: {summary['preview']}")
     return summary

@@ -28,6 +28,32 @@ def _run_case(kind: str, extra_args: list[str], output_dir: Path) -> dict:
     return run_build_w_structure(args)
 
 
+def _run_relax_case(output_dir: Path) -> dict:
+    parser = _build_parser()
+    args = parser.parse_args(
+        [
+            "--kind",
+            "vacancy",
+            "--orientation",
+            "100",
+            "--replicas",
+            "3,3,3",
+            "--vacancy-count",
+            "1",
+            "--relax",
+            "--relax-steps",
+            "5",
+            "--relax-print-interval",
+            "1",
+            "--output-dir",
+            str(output_dir),
+            "--case-name",
+            "vacancy_relax",
+        ]
+    )
+    return run_build_w_structure(args)
+
+
 def _read_xyz_atom_count(path: str | Path) -> int:
     with open(path, "r", encoding="utf-8") as f:
         return int(f.readline().strip())
@@ -75,6 +101,12 @@ def main():
     assert summaries["bicrystal"]["operations"]["csl_exact"] is True
     assert summaries["bicrystal"]["operations"]["grain_a_atoms"] > 0
     assert summaries["bicrystal"]["operations"]["grain_b_atoms"] > 0
+
+    relax_summary = _run_relax_case(output_dir)
+    assert "relaxation" in relax_summary
+    assert Path(relax_summary["relaxation"]["relaxed_structure"]).exists()
+    assert Path(relax_summary["relaxation"]["relaxation_csv"]).exists()
+    assert relax_summary["relaxation"]["final_energy_ev"] <= relax_summary["relaxation"]["initial_energy_ev"] + 1e-5
     print("W structure builder smoke test passed.")
 
 

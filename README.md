@@ -217,16 +217,32 @@ python run_scripts/build_w_structure.py --kind crack --orientation 100 --replica
 python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
 ```
 
+Add fixed-box geometry relaxation in the same case directory:
+
+```bash
+python run_scripts/build_w_structure.py \
+  --kind vacancy \
+  --orientation 100 \
+  --replicas 8,8,8 \
+  --vacancy-count 2 \
+  --relax \
+  --relax-steps 500 \
+  --relax-force-threshold 0.05
+```
+
 Outputs are written under `run_output/w_structure_builder/<case>/`:
 
 - `structure.xyz`
 - `summary.json`
 - `composition.csv`
 - `preview.png`
+- optional `relaxed_structure.xyz`
+- optional `relaxation.csv`
+- optional `relax_summary.json`
 
 `--kind bicrystal` is currently a strict CSL-periodic BCC `[001]` symmetric tilt grain-boundary seed. The default `--gb-plane 3,1,0` generates `Sigma5(310)[001]` with misorientation `36.8699 deg`. Other supported planes must be coprime positive `(h,k,0)` values.
 
-This is a geometry builder. It does not relax the structure or validate a potential. Grain-boundary production physics still requires rigid-body translation search and relaxation. Dislocation builders are intentionally deferred to the next implementation stage.
+This builder can run a fixed-box steepest-descent geometry relaxation with `--relax`. That relaxation is useful for removing severe local forces after construction, but it does not replace production NVT/NPT relaxation. Grain-boundary production physics still requires rigid-body translation search and relaxation. Dislocation builders are intentionally deferred to the next implementation stage.
 
 Smoke test:
 

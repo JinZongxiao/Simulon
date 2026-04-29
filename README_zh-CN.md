@@ -217,16 +217,32 @@ python run_scripts/build_w_structure.py --kind crack --orientation 100 --replica
 python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
 ```
 
+在同一个 case 目录里附加固定盒子的几何弛豫：
+
+```bash
+python run_scripts/build_w_structure.py \
+  --kind vacancy \
+  --orientation 100 \
+  --replicas 8,8,8 \
+  --vacancy-count 2 \
+  --relax \
+  --relax-steps 500 \
+  --relax-force-threshold 0.05
+```
+
 输出位于 `run_output/w_structure_builder/<case>/`：
 
 - `structure.xyz`
 - `summary.json`
 - `composition.csv`
 - `preview.png`
+- 可选 `relaxed_structure.xyz`
+- 可选 `relaxation.csv`
+- 可选 `relax_summary.json`
 
 `--kind bicrystal` 目前是严格 CSL 周期的 BCC `[001]` 对称倾转晶界种子。默认 `--gb-plane 3,1,0` 会生成 `Sigma5(310)[001]`，失配角为 `36.8699 deg`。其它晶界面必须是互素正整数 `(h,k,0)`。
 
-这是几何结构生成器，不负责结构弛豫，也不等价于势函数物理验证。晶界生产模拟仍然需要刚体平移搜索和结构弛豫。位错生成器留到下一阶段单独实现。
+这个 builder 可以通过 `--relax` 做固定盒子的最速下降几何弛豫，用来消除建模后的局部大力。但它不替代正式 NVT/NPT 生产弛豫。晶界生产模拟仍然需要刚体平移搜索和结构弛豫。位错生成器留到下一阶段单独实现。
 
 Smoke test：
 

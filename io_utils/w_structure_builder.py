@@ -747,3 +747,168 @@ def write_build_outputs(result: WStructureBuildResult, output_dir: str | Path, c
     )
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
+
+
+def _build_eam_model_for_coords(
+    structure_path: str | Path,
+    box_vectors: torch.Tensor,
+    eam_path: str | Path,
+    skin_thickness: float,
+):
+    from core.force.eam_force_cu import EAMForceCUDAExt as EAMForce
+    from core.integrator.integrator import VerletIntegrator
+    from core.md_model import BaseModel, SumBackboneInterface
+    from io_utils.eam_parser import EAMParser
+    from io_utils.reader import AtomFileReader
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    parser = EAMParser(filepath=str(eam_path), device=device)
+    mol = AtomFileReader(
+        filename=str(structure_path),
+        box_length=float(torch.linalg.norm(box_vectors[0]).item()),
+        cutoff=parser.cutoff,
+        device=device,
+        skin_thickness=float(skin_thickness),
+        is_mlp=True,
+        box_vectors=box_vectors,
+    )
+    ff = EAMForce(parser, mol)
+    sb = SumBackboneInterface([ff], mol)
+    integ = VerletIntegrator(mol, dt=0.001, ensemble="NVE")
+    return BaseModel(sb, integ, mol), mol, device
+
+
+def relax_structure_steepest_descent(
+    structure_path: str | Path,
+    box_vectors: torch.Tensor,
+    atom_types: list[str],
+    eam_path: str | Path,
+    output_dir: str | Path,
+    max_steps: int = 500,
+    step_size: float = 0.01,
+    force_threshold: float = 0.05,
+    print_interval: int = 50,
+    max_backtracks: int = 10,
+    skin_thickness: float = 1.0,
+) -> dict:
+    output_dir = Path(output_dir)
+    model, mol, device = _build_eam_model_for_coords(structure_path, box_vectors, eam_path, skin_thickness)
+    csv_path = output_dir / "relaxation.csv"
+    relaxed_path = output_dir / "relaxed_structure.xyz"
+    summary_path = output_dir / "relax_summary.json"
+
+    rows = []
+    converged = False
+    stop_reason = "max_steps_reached"
+    coords = mol.coordinates.detach().clone()
+
+    def evaluate():
+        out = model.sum_bone()
+        forces = out["forces"]
+        force_norm = torch.linalg.norm(forces, dim=1)
+        return out, forces, float(force_norm.max().item()), float(force_norm.mean().item())
+
+    with torch.no_grad():
+        out, forces, max_force, mean_force = evaluate()
+        initial_energy = float(out["energy"].item())
+        rows.append(
+            {
+                "step": 0,
+                "energy_ev": initial_energy,
+                "max_force_ev_A": max_force,
+                "mean_force_ev_A": mean_force,
+                "accepted_step_A": 0.0,
+            }
+        )
+        current_energy = initial_energy
+
+        for step in range(1, int(max_steps) + 1):
+            out, forces, max_force, mean_force = evaluate()
+            if max_force <= float(force_threshold):
+                converged = True
+                stop_reason = "force_threshold_reached"
+                current_energy = float(out["energy"].item())
+                break
+
+            direction = forces / torch.linalg.norm(forces, dim=1, keepdim=True).clamp_min(1e-12)
+            coords0 = mol.coordinates.detach().clone()
+            base_energy = float(out["energy"].item())
+            trial_step = float(step_size)
+            accepted = False
+            accepted_energy = base_energy
+
+            for _ in range(int(max_backtracks)):
+                trial = coords0 + trial_step * direction
+                mol.update_coordinates(trial)
+                trial_energy = float(model.sum_bone()["energy"].item())
+                if trial_energy < base_energy:
+                    accepted = True
+                    accepted_energy = trial_energy
+                    break
+                trial_step *= 0.5
+
+            if not accepted:
+                mol.update_coordinates(coords0)
+                stop_reason = "line_search_failed"
+                current_energy = base_energy
+                break
+
+            current_energy = accepted_energy
+            if step % max(1, int(print_interval)) == 0 or step == int(max_steps):
+                out_now, _, max_f_now, mean_f_now = evaluate()
+                rows.append(
+                    {
+                        "step": step,
+                        "energy_ev": float(out_now["energy"].item()),
+                        "max_force_ev_A": max_f_now,
+                        "mean_force_ev_A": mean_f_now,
+                        "accepted_step_A": trial_step,
+                    }
+                )
+
+        out_final, _, final_max_force, final_mean_force = evaluate()
+        final_energy = float(out_final["energy"].item())
+        coords = mol.coordinates.detach().cpu()
+
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["step", "energy_ev", "max_force_ev_A", "mean_force_ev_A", "accepted_step_A"],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    write_xyz_with_types(
+        relaxed_path,
+        coords,
+        atom_types,
+        comment=f"relaxed by Simulon WStructureBuilder fixed-box SD, energy={final_energy:.8f} eV",
+    )
+    summary = {
+        "relaxation_method": "fixed_box_steepest_descent",
+        "eam": str(eam_path),
+        "device": str(device),
+        "max_steps": int(max_steps),
+        "step_size_A": float(step_size),
+        "force_threshold_ev_A": float(force_threshold),
+        "converged": bool(converged),
+        "stop_reason": stop_reason,
+        "initial_energy_ev": initial_energy,
+        "final_energy_ev": final_energy,
+        "energy_drop_ev": initial_energy - final_energy,
+        "final_max_force_ev_A": final_max_force,
+        "final_mean_force_ev_A": final_mean_force,
+        "relaxed_structure": str(relaxed_path),
+        "relaxation_csv": str(csv_path),
+        "fixed_box_vectors_A": [[float(x) for x in row] for row in box_vectors.tolist()],
+        "notes": [
+            "Fixed-box geometry relaxation after structure building.",
+            "This does not replace production NVT/NPT relaxation or GB rigid-body translation search.",
+        ],
+    }
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(
+        f"Relaxation: E {initial_energy:.6f} -> {final_energy:.6f} eV, "
+        f"max|F|={final_max_force:.6f} eV/A, converged={converged}"
+    )
+    return summary

@@ -56,16 +56,32 @@ python run_scripts/build_w_structure.py --kind crack --orientation 100 --replica
 python run_scripts/build_w_structure.py --kind notch --orientation 100 --replicas 20,10,10 --notch-radius-A 10 --notch-depth-A 10
 ```
 
+Use `--relax` to run fixed-box steepest-descent geometry relaxation immediately after building:
+
+```bash
+python run_scripts/build_w_structure.py \
+  --kind vacancy \
+  --orientation 100 \
+  --replicas 8,8,8 \
+  --vacancy-count 2 \
+  --relax \
+  --relax-steps 500 \
+  --relax-force-threshold 0.05
+```
+
 Each case writes:
 
 - `structure.xyz`
 - `summary.json`
 - `composition.csv`
 - `preview.png`
+- optional `relaxed_structure.xyz`
+- optional `relaxation.csv`
+- optional `relax_summary.json`
 
 `bicrystal` currently means a CSL-periodic BCC `[001]` symmetric tilt grain-boundary seed. The default `--gb-plane 3,1,0` is `Sigma5(310)[001]` with misorientation `36.8699 deg`; `--gb-plane 2,1,0` gives the other common `Sigma5(210)[001]` branch with misorientation `53.1301 deg`. The summary records `sigma`, `misorientation_deg`, `gb_plane_hkl`, `tilt_axis_uvw`, grain atom counts, and whether the construction is CSL-exact.
 
-Important limitation: this builder only creates geometry. It does not relax the structure and does not prove physical stability. Grain-boundary production work still needs rigid-body translation search and relaxation. Dislocations are deliberately deferred because they need a dedicated elastic displacement field and core validation.
+Important limitation: builder relaxation is fixed-box steepest descent. It is intended to remove severe local forces after construction, not to replace production NVT/NPT relaxation. Grain-boundary production work still needs rigid-body translation search and relaxation. Dislocations are deliberately deferred because they need a dedicated elastic displacement field and core validation.
 
 ## Common Parameters
 
