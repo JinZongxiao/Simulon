@@ -22,6 +22,7 @@ A lightweight, PyTorch-powered molecular dynamics (MD) engine with optional cust
 | **W crack** | Added `run_scripts/w_crack.py` with center precrack generation, rigid-grip opening, stress-CMOD output, and smoke-test coverage |
 | **W DBTT** | Added `run_scripts/w_dbtt_scan.py` and `postprocess/dbtt.py` for crack-based temperature scans and DBTT trend plots |
 | **W grain boundary** | Added strict CSL `[001]` bicrystal construction plus rigid-body translation search and GB-energy reporting |
+| **W structure baseline** | Added production pure-W structure baseline matrix for bulk, surface, defects, crack/notch seeds, and GB search |
 | **Performance** | ~384 steps/s on RTX 3050 for 100-atom Ar NVT |
 
 ---
@@ -103,6 +104,7 @@ run_scripts/
   w_dbtt_scan.py          # Tungsten DBTT temperature scan
   w_batch_report.py       # Combined W workflow runner + report export
   build_w_structure.py    # Pure-W structure builder CLI
+  w_structure_baseline.py # Production pure-W structure baseline matrix
   w_gb_search.py          # CSL grain-boundary rigid-body translation search
   check_w_orientation.py  # Static sanity check for oriented BCC-W cells
   plot_md_diagnostics.py
@@ -251,6 +253,46 @@ Smoke test:
 
 ```bash
 python cuda_test/test_w_structure_builder_smoke.py
+```
+
+### 6a. Production pure-W structure baseline
+
+Run the full pure-W structure baseline matrix before ODS-W embedding or defect-mechanics comparisons:
+
+```bash
+python run_scripts/w_structure_baseline.py \
+  --preset production \
+  --orientation 100 \
+  --relax-steps 1000 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/prod_w_structure_baseline
+```
+
+The production preset builds and relaxes:
+
+- `bulk_100`
+- `surface_100_z`
+- `vacancy_1`
+- `interstitial_1`
+- `void_r8`
+- `crack_seed`
+- `notch_seed`
+- `bicrystal_seed_sigma5_310_001`
+- `gb_search_sigma5_310_001`
+
+Main outputs:
+
+- `structure_baseline.csv`
+- `summary.json`
+- `report.md`
+- per-case `structure.xyz`, `relaxed_structure.xyz`, `summary.json`, `relax_summary.json`, `preview.png`
+
+`summary.json` separates `acceptance_pass` from `production_ready`. `acceptance_pass` means the structure was built, relaxed without NaN/Inf, and energy did not increase. `production_ready` additionally requires the relaxed force threshold or valid GB-energy criteria. This distinction is important for short smoke runs.
+
+Smoke test:
+
+```bash
+python cuda_test/test_w_structure_baseline_smoke.py
 ```
 
 ### 6b. W CSL grain-boundary search

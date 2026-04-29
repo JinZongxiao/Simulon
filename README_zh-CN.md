@@ -22,6 +22,7 @@
 | **W 裂纹** | 新增 `run_scripts/w_crack.py`：中心预裂纹生成、刚性 grip 开口位移加载、应力-CMOD 输出和 smoke test |
 | **W DBTT** | 新增 `run_scripts/w_dbtt_scan.py` 和 `postprocess/dbtt.py`：基于裂纹开口的温度扫描与 DBTT 趋势分析 |
 | **W 晶界** | 新增严格 CSL `[001]` bicrystal 构型、刚体平移搜索和晶界能报告 |
+| **W 结构基线** | 新增生产级 pure-W 结构基线矩阵：bulk、surface、defect、crack/notch seed 和 GB search |
 | **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
 
 ---
@@ -103,6 +104,7 @@ run_scripts/
   w_dbtt_scan.py          # 钨 DBTT 温度扫描
   w_batch_report.py       # W 力学批量运行与汇总报告
   build_w_structure.py    # 纯 W 结构生成器 CLI
+  w_structure_baseline.py # 生产级 pure-W 结构基线矩阵
   w_gb_search.py          # CSL 晶界刚体平移搜索
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
@@ -251,6 +253,46 @@ Smoke test：
 
 ```bash
 python cuda_test/test_w_structure_builder_smoke.py
+```
+
+### 6a. 生产级 pure-W 结构基线
+
+在做 ODS-W 嵌入或缺陷力学对比前，先跑完整 pure-W 结构基线矩阵：
+
+```bash
+python run_scripts/w_structure_baseline.py \
+  --preset production \
+  --orientation 100 \
+  --relax-steps 1000 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/prod_w_structure_baseline
+```
+
+production preset 会生成并弛豫：
+
+- `bulk_100`
+- `surface_100_z`
+- `vacancy_1`
+- `interstitial_1`
+- `void_r8`
+- `crack_seed`
+- `notch_seed`
+- `bicrystal_seed_sigma5_310_001`
+- `gb_search_sigma5_310_001`
+
+主要输出：
+
+- `structure_baseline.csv`
+- `summary.json`
+- `report.md`
+- 每个 case 的 `structure.xyz`、`relaxed_structure.xyz`、`summary.json`、`relax_summary.json`、`preview.png`
+
+`summary.json` 会区分 `acceptance_pass` 和 `production_ready`。`acceptance_pass` 表示结构生成成功、弛豫无 NaN/Inf、能量没有升高；`production_ready` 还要求力收敛或 GB energy 判据有效。这个区分对短步 smoke 尤其重要。
+
+Smoke test：
+
+```bash
+python cuda_test/test_w_structure_baseline_smoke.py
 ```
 
 ### 6b. W CSL 晶界搜索

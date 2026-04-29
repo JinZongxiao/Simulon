@@ -2,9 +2,10 @@
 
 ## Scope
 
-This guide documents the pure-W structure builder, the four independent pure-W mechanics workflows in Simulon, plus one auxiliary bulk-relax preparation workflow:
+This guide documents the pure-W structure builder, the production pure-W structure baseline matrix, the four independent pure-W mechanics workflows in Simulon, plus one auxiliary bulk-relax preparation workflow:
 
 - `run_scripts/build_w_structure.py`
+- `run_scripts/w_structure_baseline.py`
 - `run_scripts/w_gb_search.py`
 - `run_scripts/w_bulk_relax.py`
 - `run_scripts/w_tensile.py`
@@ -24,6 +25,7 @@ Every workflow accepts `--output-dir`. Outputs are grouped by orientation undern
 - dbtt: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/` with temperature subdirectories inside
 - bulk relax: `.../orientation_100/`, `.../orientation_110/`, `.../orientation_111/`
 - structure builder: `.../<case_name>/`
+- structure baseline: `.../cases/<case_name>/`, plus `structure_baseline.csv`, `summary.json`, and `report.md`
 - grain-boundary search: `.../<case_name>/`
 
 When `--orientation custom` is used, the same layout becomes `.../orientation_custom/`.
@@ -84,6 +86,63 @@ Each case writes:
 `bicrystal` currently means a CSL-periodic BCC `[001]` symmetric tilt grain-boundary seed. The default `--gb-plane 3,1,0` is `Sigma5(310)[001]` with misorientation `36.8699 deg`; `--gb-plane 2,1,0` gives the other common `Sigma5(210)[001]` branch with misorientation `53.1301 deg`. The summary records `sigma`, `misorientation_deg`, `gb_plane_hkl`, `tilt_axis_uvw`, grain atom counts, and whether the construction is CSL-exact.
 
 Important limitation: builder relaxation is fixed-box steepest descent. It is intended to remove severe local forces after construction, not to replace production NVT/NPT relaxation. Grain-boundary production work still needs rigid-body translation search and relaxation. Dislocations are deliberately deferred because they need a dedicated elastic displacement field and core validation.
+
+## Production Pure-W Structure Baseline Matrix
+
+Script: `run_scripts/w_structure_baseline.py`
+
+Purpose: build and fixed-box relax a reproducible pure-W geometry baseline library before ODS-W embedding or defect-mechanics comparisons.
+
+Production command:
+
+```bash
+python run_scripts/w_structure_baseline.py \
+  --preset production \
+  --orientation 100 \
+  --relax-steps 1000 \
+  --relax-force-threshold 0.05 \
+  --output-dir run_output/prod_w_structure_baseline
+```
+
+The production preset includes:
+
+- `bulk_100`: periodic bulk W reference
+- `surface_100_z`: free-surface geometry seed with vacuum along z
+- `vacancy_1`: single-vacancy W
+- `interstitial_1`: single W interstitial seed
+- `void_r8`: spherical void seed
+- `crack_seed`: precrack geometry seed
+- `notch_seed`: surface-notch geometry seed
+- `bicrystal_seed_sigma5_310_001`: raw CSL seed
+- `gb_search_sigma5_310_001`: rigid-body translation searched GB candidate
+
+Main outputs:
+
+- `structure_baseline.csv`
+  One row per case, with atom count, energy, force, structure paths, and validation flags.
+- `summary.json`
+  Machine-readable workflow summary and per-case records.
+- `report.md`
+  Human-readable baseline report.
+- `cases/<case_name>/`
+  Per-case structure outputs from `build_w_structure.py`.
+
+Important fields:
+
+- `acceptance_pass`
+  The case built successfully, files exist, no NaN/Inf energy was produced, and relaxation did not increase energy.
+- `production_ready`
+  Stronger than `acceptance_pass`. For ordinary structures, the final maximum force must satisfy `--relax-force-threshold`; for GB search, the GB-energy sanity criteria must also pass.
+- `relax_force_pass`
+  Whether the final fixed-box relaxation force is below threshold.
+
+Smoke test:
+
+```bash
+python cuda_test/test_w_structure_baseline_smoke.py
+```
+
+Smoke output is for API/output validation only. It intentionally uses very short relaxation and may mark some cases as not `production_ready` even though `acceptance_pass=true`.
 
 ## Grain-Boundary Rigid-Body Translation Search
 
