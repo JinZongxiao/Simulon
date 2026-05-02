@@ -41,6 +41,20 @@ def main():
         assert case["acceptance_pass"] is True, case["case_name"]
         assert Path(case["structure"]).exists()
         assert Path(case["summary"]).exists()
+    subset_args = parser.parse_args(
+        [
+            "--smoke",
+            "--output-dir",
+            str(output_dir.parent / "smoke_w_structure_baseline_subset"),
+            "--cases",
+            "vacancy_1",
+            "--skip-gb-search",
+        ]
+    )
+    subset = run_w_structure_baseline(subset_args)
+    assert subset["workflow_pass"] is True
+    assert subset["case_count"] == 1
+    assert subset["cases"][0]["case_name"] == "vacancy_1"
     print("W structure baseline smoke test passed.")
 
 

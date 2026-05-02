@@ -138,6 +138,8 @@ Important fields:
   Whether the final fixed-box relaxation force is below threshold.
 - `--relax-method`
   Engineering meaning: fixed-box relaxation algorithm. `fire` is recommended for production defect seeds; `sd` preserves the original steepest-descent path for simple smoke/debug runs.
+- `--cases`
+  Engineering meaning: comma-separated case kinds or exact case names. For example, `--cases vacancy,void` runs all vacancy/void specs, while `--cases vacancy_1` runs only the named case.
 
 Smoke test:
 
@@ -182,6 +184,7 @@ python run_scripts/w_gb_search.py \
   --translations-z 5 \
   --gb-overlap-cutoff-A 1.6 \
   --gb-search-width-A 6.0 \
+  --relax-method fire \
   --relax-steps 1000 \
   --relax-force-threshold 0.05 \
   --output-dir run_output/prod_w_gb_search_sigma5_310_001
@@ -203,6 +206,8 @@ Key parameters:
   Engineering meaning: optional bulk reference supercell for `auto`; defaults to the same `--replicas`.
 - `--relax-steps`, `--relax-step-size-A`, `--relax-force-threshold`
   Engineering meaning: fixed-box steepest-descent relaxation controls for each candidate.
+- `--relax-method`
+  Engineering meaning: candidate relaxation algorithm. Use `fire` for harder GB relaxations and `sd` for compatibility with earlier runs.
 
 Outputs:
 

@@ -67,16 +67,26 @@ def _build_parser() -> argparse.ArgumentParser:
 def _case_names(raw: str, include_gb_search: bool) -> set[str]:
     all_cases = {
         "bulk",
+        "bulk_100",
         "surface",
+        "surface_100_z",
         "vacancy",
+        "vacancy_1",
         "interstitial",
+        "interstitial_1",
         "void",
+        "void_r4",
+        "void_r8",
         "crack",
+        "crack_seed",
         "notch",
+        "notch_seed",
         "bicrystal",
+        "bicrystal_seed_sigma5_310_001",
     }
     if include_gb_search:
         all_cases.add("gb_search")
+        all_cases.add("gb_search_sigma5_310_001")
     if raw.strip().lower() == "all":
         return all_cases
     requested = {item.strip().lower() for item in raw.split(",") if item.strip()}
@@ -244,6 +254,7 @@ def _run_gb_search_case(args, output_dir: Path) -> dict:
         bulk_energy_per_atom_ev="auto",
         bulk_reference_replicas=args.gb_bulk_reference_replicas,
         relax_steps=min(args.relax_steps, 8) if args.preset == "smoke" else args.relax_steps,
+        relax_method=args.relax_method,
         relax_step_size_A=args.relax_step_size_A,
         relax_force_threshold=args.relax_force_threshold,
         relax_print_interval=min(args.relax_print_interval, 4) if args.preset == "smoke" else args.relax_print_interval,
@@ -307,7 +318,7 @@ def run_w_structure_baseline(args) -> dict:
             f"E/N={row['energy_per_atom_ev']}, pass={row['acceptance_pass']}"
         )
 
-    if "gb_search" in requested and not args.skip_gb_search:
+    if requested.intersection({"gb_search", "gb_search_sigma5_310_001"}) and not args.skip_gb_search:
         row = _run_gb_search_case(args, output_dir)
         rows.append(row)
         print(
@@ -337,7 +348,7 @@ def run_w_structure_baseline(args) -> dict:
         "cases": rows,
         "notes": [
             "Pure-W structure baseline matrix.",
-            "Fixed-box steepest-descent relaxation is a geometry cleanup stage, not production thermodynamic equilibration.",
+            "Fixed-box geometry relaxation is a cleanup stage, not production thermodynamic equilibration.",
             "Use GB-search output for grain-boundary production simulations.",
         ],
     }

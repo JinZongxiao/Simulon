@@ -49,6 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional replicas for the auto bulk reference; defaults to --replicas.",
     )
     p.add_argument("--relax-steps", type=int, default=300)
+    p.add_argument("--relax-method", choices=("sd", "fire"), default="sd")
     p.add_argument("--relax-step-size-A", type=float, default=0.01)
     p.add_argument("--relax-force-threshold", type=float, default=0.1)
     p.add_argument("--relax-print-interval", type=int, default=100)
@@ -92,6 +93,7 @@ def _resolve_bulk_reference(args, replicas: tuple[int, int, int], output_dir: Pa
         step_size=args.relax_step_size_A,
         force_threshold=args.relax_force_threshold,
         print_interval=args.relax_print_interval,
+        method=args.relax_method,
     )
     atom_count = int(build_summary["final_atom_count"])
     energy_per_atom = float(relax_summary["final_energy_ev"]) / max(atom_count, 1)
@@ -148,6 +150,7 @@ def run_w_gb_search(args) -> dict:
             step_size=args.relax_step_size_A,
             force_threshold=args.relax_force_threshold,
             print_interval=args.relax_print_interval,
+            method=args.relax_method,
         )
         final_energy = float(relax_summary["final_energy_ev"])
         atom_count = int(build_summary["final_atom_count"])
@@ -237,6 +240,7 @@ def run_w_gb_search(args) -> dict:
         "replicas": list(replicas),
         "eam": str(args.eam),
         "relax_steps": int(args.relax_steps),
+        "relax_method": args.relax_method,
         "relax_force_threshold_ev_A": float(args.relax_force_threshold),
         "best": gb_report,
         "gb_energy_report": gb_energy_report,

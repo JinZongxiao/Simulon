@@ -104,7 +104,7 @@ def write_structure_baseline_report(path: str | Path, summary: dict) -> str:
             "## Notes",
             "",
             "- This workflow builds pure-W geometry baselines and fixed-box relaxed seeds.",
-            "- Fixed-box steepest descent removes large local forces but does not replace production NVT/NPT relaxation.",
+            "- Fixed-box geometry relaxation removes large local forces but does not replace production NVT/NPT relaxation.",
             "- GB production should use the `gb_search` output rather than a raw `bicrystal` seed.",
             "- Notch and crack cases are geometry seeds; mechanics workflows still define loading, grips, and boundary conditions.",
         ]

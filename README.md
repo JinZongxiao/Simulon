@@ -306,6 +306,7 @@ python run_scripts/w_gb_search.py \
   --replicas 8,6,6 \
   --translations-x 5 \
   --translations-z 3 \
+  --relax-method fire \
   --relax-steps 500 \
   --relax-force-threshold 0.05 \
   --output-dir run_output/w_gb_search
@@ -316,6 +317,7 @@ Key options:
 - `--gb-plane`: coprime positive `(h,k,0)` CSL plane. Default `3,1,0` is `Sigma5(310)[001]`.
 - `--translations-x`, `--translations-z`: rigid-body translation grid in the GB plane.
 - `--gb-overlap-cutoff-A`: close-contact removal cutoff near the two periodic GB planes.
+- `--relax-method`: candidate relaxation algorithm. Use `fire` for harder GB relaxations and `sd` for compatibility with earlier runs.
 - `--bulk-energy-per-atom-ev`: use `auto` by default. The script evaluates a matching BCC bulk reference with the same EAM path instead of relying on a hard-coded cohesive energy.
 - `--bulk-reference-replicas`: optional size for the automatic bulk reference.
 

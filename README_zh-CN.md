@@ -306,6 +306,7 @@ python run_scripts/w_gb_search.py \
   --replicas 8,6,6 \
   --translations-x 5 \
   --translations-z 3 \
+  --relax-method fire \
   --relax-steps 500 \
   --relax-force-threshold 0.05 \
   --output-dir run_output/w_gb_search
@@ -316,6 +317,7 @@ python run_scripts/w_gb_search.py \
 - `--gb-plane`：互素正整数 `(h,k,0)` CSL 晶界面。默认 `3,1,0` 是 `Sigma5(310)[001]`。
 - `--translations-x`, `--translations-z`：晶界面内刚体平移网格。
 - `--gb-overlap-cutoff-A`：两个周期晶界附近的近距离原子删除阈值。
+- `--relax-method`：候选结构弛豫算法。复杂 GB 弛豫推荐 `fire`；`sd` 用于兼容早期运行。
 - `--bulk-energy-per-atom-ev`：默认 `auto`。脚本会用同一个 EAM 文件自动计算匹配的 BCC bulk reference，避免硬编码 cohesive energy。
 - `--bulk-reference-replicas`：自动 bulk reference 的可选超胞尺寸。
 
