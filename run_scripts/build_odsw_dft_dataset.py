@@ -19,11 +19,22 @@ from io_utils.w_structure_builder import build_w_structure, parse_replicas, writ
 @dataclass(frozen=True)
 class DFTTask:
     task_id: str
+    label_source: str
+    builder_kind: str
+    diversity_role: str
     formula: str
     radius_a: float
     oxide_lattice_param_a: float
     interface_clearance_a: float
     seed: int
+    replicas: tuple[int, int, int] | None = None
+    strain: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rattle_sigma_a: float = 0.0
+    vacancy_count: int = 0
+    substitution_element: str = "Re"
+    substitution_count: int = 0
+    interstitial_count: int = 1
+    surface_vacuum_a: float = 20.0
 
 
 def _project_root() -> Path:
@@ -275,6 +286,7 @@ def _write_dataset_report(path: Path, manifest: dict, rows: list[dict]) -> str:
         f"- Tasks: {len(rows)}",
         f"- Output root: `{manifest['output_dir']}`",
         f"- DFT backends: {', '.join(manifest['dft_backends'])}",
+        f"- Campaign: {manifest['campaign']}",
         "",
         "## Configuration Space",
         f"- Replicas: `{manifest['replicas']}`",
@@ -286,6 +298,12 @@ def _write_dataset_report(path: Path, manifest: dict, rows: list[dict]) -> str:
         "",
         "## Composition Summary",
         *[f"- {comp}" for comp in composition_set],
+        "",
+        "## Label Source Coverage",
+        *[f"- {key}: {value}" for key, value in manifest.get("label_source_counts", {}).items()],
+        "",
+        "## Diversity Roles",
+        *[f"- {role}" for role in manifest.get("diversity_roles", [])],
         "",
         "## Required DFT Labels",
         "- Total energy",
@@ -322,6 +340,9 @@ def _task_grid(args: argparse.Namespace) -> list[DFTTask]:
                     tasks.append(
                         DFTTask(
                             task_id=task_id,
+                            label_source="ods_interface",
+                            builder_kind="ods_w_precursor",
+                            diversity_role="interface_chemistry_geometry",
                             formula=formula,
                             radius_a=radius,
                             oxide_lattice_param_a=oxide_a,
@@ -334,6 +355,83 @@ def _task_grid(args: argparse.Namespace) -> list[DFTTask]:
     return tasks
 
 
+def _pilot_diverse_tasks(args: argparse.Namespace) -> list[DFTTask]:
+    base_replicas = parse_replicas(args.replicas)
+    tasks = [
+        DFTTask("pure_w_bulk_eq", "pure_w_bulk", "bulk", "equilibrium_reference", "none", 0.0, 0.0, 0.0, args.seed, base_replicas),
+        DFTTask("pure_w_bulk_tensile_x_1pct", "pure_w_bulk", "bulk", "elastic_strain", "none", 0.0, 0.0, 0.0, args.seed + 1, base_replicas, (0.01, 0.0, 0.0)),
+        DFTTask("pure_w_bulk_compress_1pct", "pure_w_bulk", "bulk", "elastic_strain", "none", 0.0, 0.0, 0.0, args.seed + 2, base_replicas, (-0.01, -0.01, -0.01)),
+        DFTTask("pure_w_bulk_rattle_0p03A", "pure_w_bulk", "bulk", "thermal_displacement_proxy", "none", 0.0, 0.0, 0.0, args.seed + 3, base_replicas, (0.0, 0.0, 0.0), 0.03),
+        DFTTask("pure_w_surface_100", "pure_w_surface", "surface", "free_surface", "none", 0.0, 0.0, 0.0, args.seed + 4, base_replicas, surface_vacuum_a=15.0),
+        DFTTask("pure_w_vacancy_1", "pure_w_defect", "vacancy", "point_defect", "none", 0.0, 0.0, 0.0, args.seed + 5, base_replicas, vacancy_count=1),
+        DFTTask("w_zr_substitution_1", "solute_in_w", "substitution", "dilute_solute", "none", 0.0, 0.0, 0.0, args.seed + 6, base_replicas, substitution_element=args.ods_a_element, substitution_count=1),
+        DFTTask("w_y_substitution_1", "solute_in_w", "substitution", "dilute_solute", "none", 0.0, 0.0, 0.0, args.seed + 7, base_replicas, substitution_element=args.ods_b_element, substitution_count=1),
+        DFTTask("w_self_interstitial_1", "pure_w_defect", "interstitial", "high_energy_point_defect", "none", 0.0, 0.0, 0.0, args.seed + 8, base_replicas, interstitial_count=1),
+    ]
+
+    interface_formulas = _parse_str_list(args.oxide_formulas)
+    interface_radii = _parse_float_list(args.particle_radii_A)
+    oxide_lattice_params = _parse_float_list(args.oxide_lattice_params_A)
+    clearances = _parse_float_list(args.interface_clearances_A)
+    variants = [
+        ((0.0, 0.0, 0.0), 0.0, "interface_reference"),
+        ((0.01, 0.0, 0.0), 0.0, "interface_elastic_strain"),
+        ((0.0, 0.0, 0.0), 0.03, "interface_thermal_displacement_proxy"),
+    ]
+    task_seed = args.seed + 100
+    for formula in interface_formulas:
+        for radius in interface_radii:
+            for oxide_a in oxide_lattice_params:
+                for clearance in clearances:
+                    for strain, rattle_sigma, role in variants:
+                        task_id = (
+                            f"odsw_{formula}_r{radius:g}_a{oxide_a:g}_c{clearance:g}_{role}_s{task_seed}"
+                        ).replace(".", "p")
+                        tasks.append(
+                            DFTTask(
+                                task_id=task_id,
+                                label_source="ods_interface",
+                                builder_kind="ods_w_precursor",
+                                diversity_role=role,
+                                formula=formula,
+                                radius_a=radius,
+                                oxide_lattice_param_a=oxide_a,
+                                interface_clearance_a=clearance,
+                                seed=task_seed,
+                                replicas=base_replicas,
+                                strain=strain,
+                                rattle_sigma_a=rattle_sigma,
+                            )
+                        )
+                        task_seed += 1
+                        if args.max_tasks and len(tasks) >= args.max_tasks:
+                            return tasks
+    return tasks[: args.max_tasks] if args.max_tasks else tasks
+
+
+def _apply_task_perturbations(
+    coords: torch.Tensor,
+    box_vectors: torch.Tensor,
+    task: DFTTask,
+) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    perturbed_coords = coords.to(torch.float64)
+    perturbed_box = box_vectors.to(torch.float64)
+    perturbation = {
+        "strain": [float(x) for x in task.strain],
+        "rattle_sigma_A": float(task.rattle_sigma_a),
+    }
+    if any(abs(x) > 0.0 for x in task.strain):
+        scale = torch.tensor([1.0 + task.strain[0], 1.0 + task.strain[1], 1.0 + task.strain[2]], dtype=torch.float64)
+        perturbed_box = perturbed_box * scale.reshape(3, 1)
+        perturbed_coords = perturbed_coords * scale.reshape(1, 3)
+    if task.rattle_sigma_a > 0.0:
+        generator = torch.Generator(device=perturbed_coords.device)
+        generator.manual_seed(int(task.seed))
+        noise = torch.randn(perturbed_coords.shape, dtype=perturbed_coords.dtype, generator=generator) * float(task.rattle_sigma_a)
+        perturbed_coords = perturbed_coords + noise
+    return perturbed_coords, perturbed_box, perturbation
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Export DFT-ready ODS-W structure tasks without running DFT")
     p.add_argument("--output-dir", default=str(_project_root() / "run_output" / "odsw_dft_dataset_WZrYO"))
@@ -342,6 +440,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lattice-param", type=float, default=3.1652)
     p.add_argument("--seed", type=int, default=2026)
     p.add_argument("--max-tasks", type=int, default=0, help="optional cap for generated tasks; 0 means no cap")
+    p.add_argument("--campaign", choices=("interface_grid", "pilot_diverse"), default="interface_grid")
     p.add_argument("--ods-a-element", choices=("Zr", "Ti", "Hf"), default="Zr")
     p.add_argument("--ods-b-element", choices=("Y", "Er"), default="Y")
     p.add_argument("--oxide-formulas", default="ABO3,A2B2O7")
@@ -365,7 +464,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def run_odsw_dft_dataset(args: argparse.Namespace) -> dict:
     if args.smoke:
         args.replicas = "4,4,4"
-        args.max_tasks = 2
+        if not args.max_tasks:
+            args.max_tasks = 2
         args.particle_radii_A = "4.0"
         args.oxide_lattice_params_A = "4.4"
         args.interface_clearances_A = "0.8,1.2"
@@ -380,17 +480,26 @@ def run_odsw_dft_dataset(args: argparse.Namespace) -> dict:
     tasks_dir = output_dir / "dft_tasks"
     output_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
-    tasks = _task_grid(args)
+    tasks = _pilot_diverse_tasks(args) if args.campaign == "pilot_diverse" else _task_grid(args)
+    if args.max_tasks:
+        tasks = tasks[: int(args.max_tasks)]
     if not tasks:
         raise ValueError("no DFT tasks requested")
 
     for task in tasks:
+        task_replicas = task.replicas or replicas
         result = build_w_structure(
-            kind="ods_w_precursor",
+            kind=task.builder_kind,
             orientation=args.orientation,
-            replicas=replicas,
+            replicas=task_replicas,
             lattice_param=args.lattice_param,
             seed=task.seed,
+            surface_axis="z",
+            vacuum_a=task.surface_vacuum_a,
+            vacancy_count=task.vacancy_count,
+            substitution_element=task.substitution_element,
+            substitution_count=task.substitution_count,
+            interstitial_count=task.interstitial_count,
             ods_a_element=args.ods_a_element,
             ods_b_element=args.ods_b_element,
             ods_oxide_formula=task.formula,
@@ -398,6 +507,19 @@ def run_odsw_dft_dataset(args: argparse.Namespace) -> dict:
             ods_oxide_lattice_param_a=task.oxide_lattice_param_a,
             ods_interface_clearance_a=task.interface_clearance_a,
         )
+        coords, box_vectors, perturbation = _apply_task_perturbations(result.coords, result.box_vectors, task)
+        if perturbation["strain"] != [0.0, 0.0, 0.0] or perturbation["rattle_sigma_A"] > 0.0:
+            result = type(result)(
+                coords=coords,
+                atom_types=result.atom_types,
+                box_vectors=box_vectors,
+                summary={
+                    **result.summary,
+                    "box_vectors_A": [[float(x) for x in row] for row in box_vectors.tolist()],
+                    "box_lengths_A": [float(x) for x in torch.linalg.norm(box_vectors, dim=1).tolist()],
+                    "dft_perturbation": perturbation,
+                },
+            )
         build_summary = write_build_outputs(result, structures_dir, case_name=task.task_id)
         task_dir = tasks_dir / task.task_id
         common_dir = task_dir / "common"
@@ -436,11 +558,18 @@ def run_odsw_dft_dataset(args: argparse.Namespace) -> dict:
         composition = build_summary.get("composition", {})
         row = {
             "task_id": task.task_id,
+            "label_source": task.label_source,
+            "builder_kind": task.builder_kind,
+            "diversity_role": task.diversity_role,
             "chemistry": f"W-{args.ods_a_element}-{args.ods_b_element}-O",
             "oxide_formula": task.formula,
             "particle_radius_A": task.radius_a,
             "oxide_lattice_param_A": task.oxide_lattice_param_a,
             "interface_clearance_A": task.interface_clearance_a,
+            "strain_x": task.strain[0],
+            "strain_y": task.strain[1],
+            "strain_z": task.strain[2],
+            "rattle_sigma_A": task.rattle_sigma_a,
             "seed": task.seed,
             "atom_count": int(build_summary["final_atom_count"]),
             "composition": json.dumps(composition, sort_keys=True),
@@ -477,6 +606,7 @@ def run_odsw_dft_dataset(args: argparse.Namespace) -> dict:
         "ods_b_element": args.ods_b_element,
         "orientation": args.orientation,
         "replicas": args.replicas,
+        "campaign": args.campaign,
         "lattice_param_A": args.lattice_param,
         "oxide_formulas": _parse_str_list(args.oxide_formulas),
         "particle_radius_A_values": _parse_float_list(args.particle_radii_A),
@@ -488,6 +618,8 @@ def run_odsw_dft_dataset(args: argparse.Namespace) -> dict:
         "structures_dir": str(structures_dir),
         "dft_tasks_dir": str(tasks_dir),
         "dft_backends": backends,
+        "label_source_counts": dict(sorted({row["label_source"]: sum(1 for item in rows if item["label_source"] == row["label_source"]) for row in rows}.items())),
+        "diversity_roles": sorted({row["diversity_role"] for row in rows}),
         "qe_pseudo_dir": args.qe_pseudo_dir if "qe" in backends else None,
         "vasp_inputs_dir": None,
         "required_labels": ["energy", "forces", "stress", "cell", "species", "positions"],

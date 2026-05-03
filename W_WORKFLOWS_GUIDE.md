@@ -168,6 +168,7 @@ Pilot command:
 
 ```bash
 python run_scripts/build_odsw_dft_dataset.py \
+  --campaign pilot_diverse \
   --replicas 8,8,8 \
   --ods-a-element Zr \
   --ods-b-element Y \
@@ -178,6 +179,13 @@ python run_scripts/build_odsw_dft_dataset.py \
   --dft-backends qe,vasp \
   --output-dir run_output/odsw_dft_dataset_WZrYO
 ```
+
+Campaigns:
+
+- `interface_grid`
+  Geometry sweep over ODS-W interface particle formula, radius, oxide lattice parameter, and interface clearance. This is useful for targeted interface studies but is too narrow as a standalone MLP training set.
+- `pilot_diverse`
+  First MLP-oriented campaign. It includes pure-W bulk references, strained/rattled W, surfaces, point defects, dilute Zr/Y solutes, and ODS-W interface variants.
 
 Output layout:
 
@@ -205,6 +213,16 @@ Required labels for later MLP training:
 - Species and positions
 
 Important limitation: the exported structures are geometry-only ODS-W precursors. They are not DFT-relaxed and are not MLP-ready labels until a DFT code has produced converged energy/force/stress data. Do not treat template QE/VASP inputs as validated production DFT settings without checking pseudopotentials, cutoffs, k-point density, smearing, and convergence behavior.
+
+MLP label diversity requirement:
+
+- Equilibrium references are needed so the model knows low-energy basins.
+- Elastic strain configurations are needed for stress and modulus transferability.
+- Rattled or thermal-displacement proxy configurations are needed for finite-temperature robustness.
+- Surfaces and point defects are needed because ODS-W workflows include free surfaces, indentation, cracks, vacancies, interstitials, and voids.
+- Dilute solute and interface structures are needed because ODS-W chemistry is not pure W.
+
+The exported `metadata.csv` records `label_source` and `diversity_role`. Use these fields later to split train/validation/test sets and to diagnose whether the MLP is failing on bulk, defect, solute, or interface physics.
 
 Smoke test:
 

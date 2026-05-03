@@ -43,6 +43,25 @@ def main():
         assert (task_dir / "vasp" / "KPOINTS.template").exists()
         assert (task_dir / "vasp" / "POTCAR.required.txt").exists()
         assert (task_dir / "README.md").exists()
+
+    diverse_output_dir = Path(__file__).resolve().parents[1] / "run_output" / "smoke_odsw_dft_dataset_diverse"
+    diverse_args = parser.parse_args(
+        [
+            "--smoke",
+            "--campaign",
+            "pilot_diverse",
+            "--max-tasks",
+            "4",
+            "--output-dir",
+            str(diverse_output_dir),
+        ]
+    )
+    diverse_summary = run_odsw_dft_dataset(diverse_args)
+    assert diverse_summary["campaign"] == "pilot_diverse"
+    assert diverse_summary["task_count"] == 4
+    assert "pure_w_bulk" in diverse_summary["label_source_counts"]
+    assert "elastic_strain" in diverse_summary["diversity_roles"]
+    assert Path(diverse_summary["dft_tasks_dir"]).exists()
     print("ODS-W DFT dataset smoke test passed.")
 
 

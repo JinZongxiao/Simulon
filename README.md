@@ -263,6 +263,7 @@ Example pilot export:
 
 ```bash
 python run_scripts/build_odsw_dft_dataset.py \
+  --campaign pilot_diverse \
   --replicas 8,8,8 \
   --ods-a-element Zr \
   --ods-b-element Y \
@@ -273,6 +274,8 @@ python run_scripts/build_odsw_dft_dataset.py \
   --dft-backends qe,vasp \
   --output-dir run_output/odsw_dft_dataset_WZrYO
 ```
+
+Use `--campaign interface_grid` when you only want an ODS interface geometry sweep. Use `--campaign pilot_diverse` for the first MLP-oriented dataset, because it includes multiple label sources: pure-W bulk, strained/rattled W, surfaces, point defects, dilute Zr/Y solutes, and ODS-W interfaces.
 
 Outputs:
 
@@ -285,6 +288,8 @@ Outputs:
 - `dft_tasks/<task_id>/vasp/`: `POSCAR`, `INCAR.template`, `KPOINTS.template`, and `POTCAR.required.txt`.
 
 Required labels for later MLP training are total energy, forces, stress, final cell, species, and positions. The exported QE/VASP templates are starting points only; record the exact pseudopotentials, cutoffs, k-points, and convergence settings used for real DFT labels.
+
+For MLP training, do not rely on only one ODS particle geometry. The dataset should cover equilibrium, elastic strain, thermal displacement proxies, free surfaces, point defects, dilute solutes, and interface configurations. The exported `metadata.csv` records `label_source` and `diversity_role` so later label quality and model errors can be analyzed by configuration class.
 
 Smoke test:
 
