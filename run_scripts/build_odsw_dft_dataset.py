@@ -136,6 +136,8 @@ def _write_qe_input_template(
         f"  prefix = '{task.task_id}'",
         f"  pseudo_dir = '{args.qe_pseudo_dir}'",
         "  outdir = './tmp'",
+        "  tstress = .true.",
+        "  tprnfor = .true.",
         "/",
         "&SYSTEM",
         "  ibrav = 0",

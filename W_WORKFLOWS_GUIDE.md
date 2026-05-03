@@ -230,6 +230,58 @@ Smoke test:
 python cuda_test/test_odsw_dft_dataset_smoke.py
 ```
 
+## QE DFT Label Runner
+
+Script: `run_scripts/run_dft_qe_task.py`
+
+Purpose: run one `dft_tasks/<task_id>/qe/pw.in` input through Quantum ESPRESSO and convert the output into the backend-neutral MLP label schema.
+
+Example:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/run_dft_qe_task.py \
+  run_output/odsw_dft_dataset_WZrYO/dft_tasks/<task_id> \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200
+```
+
+Outputs:
+
+- `qe/qe.out`
+  Raw QE output.
+- `qe/qe_status.json`
+  Runner status: command, MPI count, OpenMP threads, elapsed time, return code, convergence flag, and label path.
+- `dft_label.json`
+  Unified label schema with energy, forces, stress, cell, species, positions, and readiness flags.
+
+Important fields in `dft_label.json`:
+
+- `backend`
+  Current value: `qe`.
+- `energy_eV`
+  Total DFT energy in eV.
+- `forces_eV_A`
+  Atomic forces in eV/A.
+- `stress_GPa`
+  Stress tensor in GPa, converted from QE kbar output.
+- `cell_A`, `positions_A`, `species`
+  Structure used for the DFT input.
+- `converged`, `job_done`, `no_nan`
+  Basic calculation health flags.
+- `label_ready`
+  True only when QE completed, SCF converged, energy/forces/stress are present, and no NaN/Inf was parsed.
+
+Smoke test:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python cuda_test/test_dft_qe_smoke.py
+```
+
+The smoke test always checks the parser. If `pw.x`, `mpirun`, and the W UPF are available in the environment, it also runs a two-atom W BCC SCF and writes a real `dft_label.json`.
+
 ## Grain-Boundary Rigid-Body Translation Search
 
 Script: `run_scripts/w_gb_search.py`

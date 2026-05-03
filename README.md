@@ -297,7 +297,35 @@ Smoke test:
 python cuda_test/test_odsw_dft_dataset_smoke.py
 ```
 
-### 6b. Production pure-W structure baseline
+### 6b. QE DFT label runner
+
+After generating `dft_tasks/<task_id>/qe/pw.in`, run one task through the QE backend:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/run_dft_qe_task.py \
+  run_output/odsw_dft_dataset_WZrYO/dft_tasks/<task_id> \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200
+```
+
+Outputs:
+
+- `dft_tasks/<task_id>/qe/qe.out`
+- `dft_tasks/<task_id>/qe/qe_status.json`
+- `dft_tasks/<task_id>/dft_label.json`
+
+`dft_label.json` is the backend-neutral label schema used for later MLP training. It records `energy_eV`, `forces_eV_A`, `stress_GPa`, `cell_A`, `species`, `positions_A`, `converged`, `job_done`, and `label_ready`.
+
+Smoke test:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python cuda_test/test_dft_qe_smoke.py
+```
+
+### 6c. Production pure-W structure baseline
 
 Run the full pure-W structure baseline matrix before ODS-W embedding or defect-mechanics comparisons:
 
@@ -338,7 +366,7 @@ Smoke test:
 python cuda_test/test_w_structure_baseline_smoke.py
 ```
 
-### 6c. W CSL grain-boundary search
+### 6d. W CSL grain-boundary search
 
 For grain-boundary work, do not use the raw bicrystal seed as the final model. Run a rigid-body translation search, relax every candidate, and rank by excess GB energy:
 
