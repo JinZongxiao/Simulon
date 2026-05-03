@@ -20,6 +20,7 @@ SUPPORTED_KINDS = (
     "vacancy",
     "interstitial",
     "substitution",
+    "ods_w_precursor",
     "crack",
     "notch",
     "void",
@@ -297,6 +298,132 @@ def _apply_void(
         "void_radius_A": float(radius_a),
         "removed_atoms": removed,
     }
+
+
+def _parse_oxide_formula(formula: str) -> dict[str, int]:
+    normalized = str(formula).strip().upper().replace(" ", "")
+    supported = {
+        "ABO": {"A": 1, "B": 1, "O": 1},
+        "ABO2": {"A": 1, "B": 1, "O": 2},
+        "ABO3": {"A": 1, "B": 1, "O": 3},
+        "AB2O4": {"A": 1, "B": 2, "O": 4},
+        "A2B2O7": {"A": 2, "B": 2, "O": 7},
+    }
+    if normalized not in supported:
+        raise ValueError(
+            f"unsupported oxide_formula={formula}; supported={sorted(supported)}"
+        )
+    return supported[normalized]
+
+
+def _motif_for_formula(formula: str) -> list[tuple[str, tuple[float, float, float]]]:
+    normalized = str(formula).strip().upper().replace(" ", "")
+    if normalized == "ABO3":
+        return [
+            ("A", (0.0, 0.0, 0.0)),
+            ("B", (0.5, 0.5, 0.5)),
+            ("O", (0.5, 0.5, 0.0)),
+            ("O", (0.5, 0.0, 0.5)),
+            ("O", (0.0, 0.5, 0.5)),
+        ]
+    # Generic pseudo-oxide motif. This preserves stoichiometry but is not a
+    # crystallographic oxide model; it is intended only as an ODS-W geometry seed.
+    stoich = _parse_oxide_formula(normalized)
+    fractions = [
+        (0.00, 0.00, 0.00),
+        (0.50, 0.50, 0.50),
+        (0.50, 0.00, 0.00),
+        (0.00, 0.50, 0.00),
+        (0.00, 0.00, 0.50),
+        (0.50, 0.50, 0.00),
+        (0.50, 0.00, 0.50),
+        (0.00, 0.50, 0.50),
+        (0.25, 0.25, 0.25),
+        (0.75, 0.75, 0.75),
+        (0.25, 0.75, 0.25),
+    ]
+    motif: list[tuple[str, tuple[float, float, float]]] = []
+    cursor = 0
+    for label in ("A", "B", "O"):
+        for _ in range(int(stoich[label])):
+            motif.append((label, fractions[cursor % len(fractions)]))
+            cursor += 1
+    return motif
+
+
+def _apply_ods_w_precursor(
+    coords: torch.Tensor,
+    atom_types: list[str],
+    box_vectors: torch.Tensor,
+    center: torch.Tensor,
+    radius_a: float,
+    a_element: str,
+    b_element: str,
+    oxide_formula: str,
+    oxide_lattice_param_a: float,
+    interface_clearance_a: float,
+) -> tuple[torch.Tensor, list[str], dict]:
+    if radius_a <= 0.0:
+        raise ValueError("ods particle radius must be positive")
+    if oxide_lattice_param_a <= 0.0:
+        raise ValueError("oxide lattice parameter must be positive")
+    center = center.to(torch.float64)
+    d = torch.linalg.norm(coords.to(torch.float64) - center.reshape(1, 3), dim=1)
+    remove_radius = float(radius_a) + max(0.0, float(interface_clearance_a))
+    keep_mask = d > remove_radius
+    keep = keep_mask.nonzero(as_tuple=False).flatten().tolist()
+    removed_w = int((~keep_mask).sum().item())
+
+    motif = _motif_for_formula(oxide_formula)
+    half = int(math.ceil(float(radius_a) / float(oxide_lattice_param_a))) + 1
+    inserted_coords: list[torch.Tensor] = []
+    inserted_types: list[str] = []
+    label_to_element = {"A": str(a_element), "B": str(b_element), "O": "O"}
+    for i in range(-half, half + 1):
+        for j in range(-half, half + 1):
+            for k in range(-half, half + 1):
+                cell = torch.tensor([i, j, k], dtype=torch.float64) * float(oxide_lattice_param_a)
+                for label, frac in motif:
+                    offset = cell + torch.tensor(frac, dtype=torch.float64) * float(oxide_lattice_param_a)
+                    pos = center + offset
+                    if torch.linalg.norm(pos - center) <= float(radius_a):
+                        inserted_coords.append(pos)
+                        inserted_types.append(label_to_element[label])
+
+    if not inserted_coords:
+        raise ValueError("ODS particle contains no atoms; increase radius or reduce oxide lattice parameter")
+
+    oxide_coords = torch.stack(inserted_coords, dim=0)
+    new_coords = torch.cat([coords[keep].to(torch.float64), oxide_coords], dim=0)
+    new_types = [atom_types[i] for i in keep] + inserted_types
+    oxide_comp = _composition(inserted_types)
+    operations = {
+        "ods_precursor": True,
+        "physics_ready": False,
+        "requires_multielement_potential": True,
+        "particle_model": "spherical_pseudo_oxide_geometry",
+        "a_element": str(a_element),
+        "b_element": str(b_element),
+        "oxide_formula": str(oxide_formula).upper(),
+        "oxide_stoichiometry_labels": _parse_oxide_formula(oxide_formula),
+        "oxide_composition": oxide_comp,
+        "oxide_atom_count": int(len(inserted_types)),
+        "matrix_w_atoms_after_removal": int(len(keep)),
+        "removed_w_atoms": removed_w,
+        "particle_center_A": [float(x) for x in center.tolist()],
+        "particle_radius_A": float(radius_a),
+        "oxide_lattice_param_A": float(oxide_lattice_param_a),
+        "interface_clearance_A": float(interface_clearance_a),
+        "estimated_volume_fraction": float(
+            (4.0 / 3.0) * math.pi * float(radius_a) ** 3
+            / max(1e-12, abs(float(torch.linalg.det(box_vectors.to(torch.float64)).item())))
+        ),
+        "note": (
+            "Geometry precursor only. Do not run physical ODS-W MD unless a "
+            "validated W-A-B-O multi-element potential is supplied."
+        ),
+    }
+    return new_coords, new_types, operations
 
 
 def _apply_crack(
@@ -578,6 +705,12 @@ def build_w_structure(
     substitution_count: int = 0,
     substitution_fraction: float = 0.0,
     substitution_element: str = "Re",
+    ods_a_element: str = "Zr",
+    ods_b_element: str = "Y",
+    ods_oxide_formula: str = "ABO3",
+    ods_particle_radius_a: float = 8.0,
+    ods_oxide_lattice_param_a: float = 4.5,
+    ods_interface_clearance_a: float = 1.0,
     void_radius_a: float = 5.0,
     defect_center: tuple[float, float, float] | None = None,
     crack_half_length_a: float = 15.0,
@@ -633,6 +766,19 @@ def build_w_structure(
         atom_types, operations = _apply_substitution(
             atom_types, substitution_element, substitution_count, substitution_fraction, seed
         )
+    elif kind == "ods_w_precursor":
+        coords, atom_types, operations = _apply_ods_w_precursor(
+            coords,
+            atom_types,
+            box_vectors,
+            center if center is not None else _center_from_box(box_vectors),
+            ods_particle_radius_a,
+            ods_a_element,
+            ods_b_element,
+            ods_oxide_formula,
+            ods_oxide_lattice_param_a,
+            ods_interface_clearance_a,
+        )
     elif kind == "void":
         coords, atom_types, operations = _apply_void(
             coords, atom_types, center if center is not None else _center_from_box(box_vectors), void_radius_a
@@ -678,6 +824,7 @@ def build_w_structure(
         "operations": operations,
         "notes": [
             "Geometry builder only; physical validity still requires relaxation with a suitable potential.",
+            "ODS-W precursor output is geometry-only unless a validated W-A-B-O multi-element potential is provided.",
             "Bicrystal output is an exact CSL-periodic [001] symmetric tilt seed for cubic BCC W.",
             "Production grain-boundary physics still requires rigid-body translation search and relaxation.",
             "Dislocation builders are intentionally deferred to a dedicated implementation.",
@@ -734,6 +881,227 @@ def write_preview_png(path: str | Path, coords: torch.Tensor, atom_types: list[s
     return str(path)
 
 
+def _percentile(values: torch.Tensor, q: float) -> float | None:
+    if values.numel() == 0:
+        return None
+    return float(torch.quantile(values.to(torch.float64), float(q)).item())
+
+
+def _ods_interface_sanity(
+    output_dir: Path,
+    coords: torch.Tensor,
+    atom_types: list[str],
+    summary: dict,
+) -> dict:
+    if summary.get("kind") != "ods_w_precursor":
+        return {"available": False, "reason": "not an ODS-W precursor structure"}
+    if coords.shape[0] > 50_000:
+        return {
+            "available": False,
+            "reason": "structure is too large for dense build-time interface distance analysis",
+        }
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    w_idx = [i for i, t in enumerate(atom_types) if t == "W"]
+    oxide_idx = [i for i, t in enumerate(atom_types) if t != "W"]
+    if not w_idx or not oxide_idx:
+        return {
+            "available": False,
+            "reason": "missing W matrix atoms or oxide precursor atoms",
+        }
+
+    w_coords = coords[w_idx].to(torch.float64)
+    oxide_coords = coords[oxide_idx].to(torch.float64)
+    oxide_types = [atom_types[i] for i in oxide_idx]
+    d = torch.cdist(oxide_coords, w_coords)
+    oxide_nearest_w = d.min(dim=1).values
+    w_nearest_oxide = d.min(dim=0).values
+    interface_cutoff = 3.5
+    too_close_cutoff = 1.2
+    caution_cutoff = 1.6
+    rows = []
+    by_element: dict[str, list[float]] = {}
+    for element, dist in zip(oxide_types, oxide_nearest_w.detach().cpu().tolist()):
+        by_element.setdefault(element, []).append(float(dist))
+    for element in sorted(by_element):
+        vals = torch.tensor(by_element[element], dtype=torch.float64)
+        rows.append(
+            {
+                "element": element,
+                "oxide_atom_count": int(vals.numel()),
+                "min_nearest_w_A": float(vals.min().item()),
+                "p05_nearest_w_A": _percentile(vals, 0.05),
+                "p50_nearest_w_A": _percentile(vals, 0.50),
+                "mean_nearest_w_A": float(vals.mean().item()),
+                "max_nearest_w_A": float(vals.max().item()),
+                "interface_atoms_within_3p5_A": int((vals <= interface_cutoff).sum().item()),
+                "too_close_atoms_lt_1p2_A": int((vals < too_close_cutoff).sum().item()),
+                "caution_atoms_lt_1p6_A": int((vals < caution_cutoff).sum().item()),
+            }
+        )
+
+    csv_path = output_dir / "interface_sanity.csv"
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
+        fieldnames = [
+            "element",
+            "oxide_atom_count",
+            "min_nearest_w_A",
+            "p05_nearest_w_A",
+            "p50_nearest_w_A",
+            "mean_nearest_w_A",
+            "max_nearest_w_A",
+            "interface_atoms_within_3p5_A",
+            "too_close_atoms_lt_1p2_A",
+            "caution_atoms_lt_1p6_A",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    plot_path = output_dir / "interface_distance_hist.png"
+    plot_written = None
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(6, 4.5))
+        for element in sorted(by_element):
+            ax.hist(by_element[element], bins=24, alpha=0.55, label=f"{element}-to-W")
+        ax.axvline(too_close_cutoff, color="#bf616a", linestyle="--", linewidth=1.2, label="too close 1.2 A")
+        ax.axvline(caution_cutoff, color="#d08770", linestyle="--", linewidth=1.2, label="caution 1.6 A")
+        ax.set_xlabel("nearest W distance (A)")
+        ax.set_ylabel("oxide atom count")
+        ax.set_title("ODS-W interface nearest-distance sanity")
+        ax.grid(True, alpha=0.2)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        fig.savefig(plot_path, dpi=180)
+        plt.close(fig)
+        plot_written = str(plot_path)
+    except Exception:
+        plot_written = None
+
+    too_close_atoms = int((oxide_nearest_w < too_close_cutoff).sum().item())
+    caution_atoms = int((oxide_nearest_w < caution_cutoff).sum().item())
+    interface_oxide_atoms = int((oxide_nearest_w <= interface_cutoff).sum().item())
+    interface_w_atoms = int((w_nearest_oxide <= interface_cutoff).sum().item())
+    pass_basic = too_close_atoms == 0 and interface_oxide_atoms > 0 and interface_w_atoms > 0
+    notes = [
+        "Distance checks are geometry-only; they do not validate energetics or thermodynamic stability.",
+        "The current ODS-W precursor particle is a pseudo-oxide geometry seed, not a fully validated oxide crystal.",
+    ]
+    if too_close_atoms:
+        notes.append("Some oxide atoms are closer than 1.2 A to W; increase interface clearance or adjust particle geometry.")
+    elif caution_atoms:
+        notes.append("Some oxide atoms are closer than 1.6 A to W; inspect the interface before using this geometry.")
+    else:
+        notes.append("No oxide-W contacts below 1.6 A were detected.")
+
+    return {
+        "available": True,
+        "pass": bool(pass_basic),
+        "csv": str(csv_path),
+        "plot": plot_written,
+        "interface_cutoff_A": interface_cutoff,
+        "too_close_cutoff_A": too_close_cutoff,
+        "caution_cutoff_A": caution_cutoff,
+        "oxide_atom_count": int(len(oxide_idx)),
+        "w_atom_count": int(len(w_idx)),
+        "interface_oxide_atoms_within_3p5_A": interface_oxide_atoms,
+        "interface_w_atoms_within_3p5_A": interface_w_atoms,
+        "min_oxide_to_w_distance_A": float(oxide_nearest_w.min().item()),
+        "mean_oxide_to_w_distance_A": float(oxide_nearest_w.mean().item()),
+        "p05_oxide_to_w_distance_A": _percentile(oxide_nearest_w, 0.05),
+        "p50_oxide_to_w_distance_A": _percentile(oxide_nearest_w, 0.50),
+        "min_w_to_oxide_distance_A": float(w_nearest_oxide.min().item()),
+        "mean_w_to_oxide_distance_A": float(w_nearest_oxide.mean().item()),
+        "too_close_oxide_atoms_lt_1p2_A": too_close_atoms,
+        "caution_oxide_atoms_lt_1p6_A": caution_atoms,
+        "by_element": rows,
+        "notes": notes,
+    }
+
+
+def _write_ods_report(path: Path, summary: dict) -> str | None:
+    if summary.get("kind") != "ods_w_precursor":
+        return None
+    ops = summary.get("operations", {})
+    sanity = summary.get("interface_sanity", {})
+    comp = summary.get("composition", {})
+    lines = [
+        "# ODS-W Precursor Builder Report",
+        "",
+        "## 结构目的",
+        "这个结构是 ODS-W 几何前驱：在 BCC W 基体中挖出一个球形区域，并填入 A-B-O 富集颗粒。",
+        "它用于准备后续结构、界面和势函数工作，不代表已经完成物理弛豫或可用于直接 MD 结论。",
+        "",
+        "## 体系信息",
+        f"- Kind: `{summary.get('kind')}`",
+        f"- Orientation: `{summary.get('orientation')}`",
+        f"- Replicas: `{summary.get('replicas')}`",
+        f"- Lattice parameter: `{summary.get('lattice_param_A')}` A",
+        f"- Final atom count: `{summary.get('final_atom_count')}`",
+        f"- Composition: `{comp}`",
+        f"- Box lengths: `{summary.get('box_lengths_A')}` A",
+        f"- Global minimum distance: `{summary.get('min_distance_A')}` A",
+        "",
+        "## ODS 颗粒定义",
+        f"- A element: `{ops.get('a_element')}`",
+        f"- B element: `{ops.get('b_element')}`",
+        f"- Oxide formula template: `{ops.get('oxide_formula')}`",
+        f"- Particle model: `{ops.get('particle_model')}`",
+        f"- Particle radius: `{ops.get('particle_radius_A')}` A",
+        f"- Oxide pseudo lattice parameter: `{ops.get('oxide_lattice_param_A')}` A",
+        f"- Interface clearance: `{ops.get('interface_clearance_A')}` A",
+        f"- Removed W atoms: `{ops.get('removed_w_atoms')}`",
+        f"- Inserted oxide atoms: `{ops.get('oxide_atom_count')}`",
+        f"- Estimated oxide volume fraction: `{ops.get('estimated_volume_fraction')}`",
+        "",
+        "## 界面 sanity checks",
+    ]
+    if sanity.get("available"):
+        lines += [
+            f"- Sanity pass: `{sanity.get('pass')}`",
+            f"- Min oxide-to-W distance: `{sanity.get('min_oxide_to_w_distance_A')}` A",
+            f"- Mean oxide-to-W distance: `{sanity.get('mean_oxide_to_w_distance_A')}` A",
+            f"- Oxide atoms within 3.5 A of W: `{sanity.get('interface_oxide_atoms_within_3p5_A')}`",
+            f"- W atoms within 3.5 A of oxide: `{sanity.get('interface_w_atoms_within_3p5_A')}`",
+            f"- Too-close oxide atoms (<1.2 A): `{sanity.get('too_close_oxide_atoms_lt_1p2_A')}`",
+            f"- Caution oxide atoms (<1.6 A): `{sanity.get('caution_oxide_atoms_lt_1p6_A')}`",
+            f"- Interface CSV: `{sanity.get('csv')}`",
+            f"- Interface histogram: `{sanity.get('plot')}`",
+        ]
+        lines.append("")
+        lines.append("Element-resolved nearest W distances:")
+        for row in sanity.get("by_element", []):
+            lines.append(
+                f"- `{row['element']}`: count={row['oxide_atom_count']}, "
+                f"min={row['min_nearest_w_A']:.4f} A, "
+                f"median={row['p50_nearest_w_A']:.4f} A, "
+                f"mean={row['mean_nearest_w_A']:.4f} A"
+            )
+    else:
+        lines.append(f"- Interface sanity unavailable: `{sanity.get('reason')}`")
+    lines += [
+        "",
+        "## 物理限制",
+        "- 当前结构没有使用 W-A-B-O 多元素势函数弛豫。",
+        "- `physics_ready=false` 是有意保守设置，表示不能直接用于 ODS-W 力学结论。",
+        "- 若要做拉伸、压痕、裂纹或 DBTT，必须先找到并验证覆盖 W/A/B/O 的多元素势函数，或者训练 ML potential。",
+        "- 当前 pseudo-oxide motif 主要保证几何、化学计量和界面距离可检查，不等价于真实氧化物晶体结构。",
+        "",
+        "## 建议下一步",
+        "1. 检查 `preview.png` 和 `interface_distance_hist.png`，确认颗粒位置和界面距离没有明显异常。",
+        "2. 根据目标材料确定真实氧化物结构和取向关系，例如 pyrochlore 或 perovskite。",
+        "3. 建立 W/oxide interface validation set，用 DFT 或可靠多元素势函数弛豫。",
+        "",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return str(path)
+
+
 def write_build_outputs(result: WStructureBuildResult, output_dir: str | Path, case_name: str | None = None) -> dict:
     output_dir = Path(output_dir)
     if case_name:
@@ -743,6 +1111,7 @@ def write_build_outputs(result: WStructureBuildResult, output_dir: str | Path, c
     summary_path = output_dir / "summary.json"
     composition_path = output_dir / "composition.csv"
     preview_path = output_dir / "preview.png"
+    report_path = output_dir / "report.md"
 
     write_xyz_with_types(
         xyz_path,
@@ -756,6 +1125,11 @@ def write_build_outputs(result: WStructureBuildResult, output_dir: str | Path, c
     composition_csv = _write_composition_csv(composition_path, result.atom_types)
     preview = write_preview_png(preview_path, result.coords, result.atom_types, title=f"W {result.summary['kind']}")
     summary = dict(result.summary)
+    interface_sanity = _ods_interface_sanity(output_dir, result.coords, result.atom_types, summary)
+    if interface_sanity.get("available"):
+        summary["interface_sanity"] = interface_sanity
+    elif summary.get("kind") == "ods_w_precursor":
+        summary["interface_sanity"] = interface_sanity
     summary.update(
         {
             "output_dir": str(output_dir),
@@ -765,6 +1139,9 @@ def write_build_outputs(result: WStructureBuildResult, output_dir: str | Path, c
             "preview": preview,
         }
     )
+    report = _write_ods_report(report_path, summary)
+    if report:
+        summary["report"] = report
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 

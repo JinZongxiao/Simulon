@@ -21,7 +21,7 @@ def _project_root() -> Path:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Build pure W structures for Simulon workflows")
+    p = argparse.ArgumentParser(description="Build pure W and geometry-only ODS-W precursor structures for Simulon workflows")
     p.add_argument("--kind", choices=SUPPORTED_KINDS, default="bulk")
     p.add_argument("--orientation", choices=("100", "110", "111"), default="100")
     p.add_argument("--replicas", default="6,6,6", help="supercell replicas as nx,ny,nz")
@@ -42,6 +42,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--substitution-count", type=int, default=0)
     p.add_argument("--substitution-fraction", type=float, default=0.0)
     p.add_argument("--substitution-element", default="Re")
+
+    p.add_argument("--ods-a-element", default="Zr", choices=("Zr", "Ti", "Hf"), help="A-site element for ODS-W ABOx precursor")
+    p.add_argument("--ods-b-element", default="Y", choices=("Y", "Er"), help="B-site element for ODS-W ABOx precursor")
+    p.add_argument(
+        "--ods-oxide-formula",
+        default="ABO3",
+        choices=("ABO", "ABO2", "ABO3", "AB2O4", "A2B2O7"),
+        help="stoichiometry template for the geometry-only oxide particle",
+    )
+    p.add_argument("--ods-particle-radius-A", type=float, default=8.0)
+    p.add_argument("--ods-oxide-lattice-param-A", type=float, default=4.5)
+    p.add_argument("--ods-interface-clearance-A", type=float, default=1.0)
 
     p.add_argument("--defect-center", default=None, help="cartesian center as x,y,z in Angstrom")
     p.add_argument("--void-radius-A", type=float, default=5.0)
@@ -87,6 +99,12 @@ def run_build_w_structure(args) -> dict:
         substitution_count=args.substitution_count,
         substitution_fraction=args.substitution_fraction,
         substitution_element=args.substitution_element,
+        ods_a_element=args.ods_a_element,
+        ods_b_element=args.ods_b_element,
+        ods_oxide_formula=args.ods_oxide_formula,
+        ods_particle_radius_a=args.ods_particle_radius_A,
+        ods_oxide_lattice_param_a=args.ods_oxide_lattice_param_A,
+        ods_interface_clearance_a=args.ods_interface_clearance_A,
         void_radius_a=args.void_radius_A,
         defect_center=center,
         crack_half_length_a=args.crack_half_length_A,
