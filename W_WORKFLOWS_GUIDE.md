@@ -149,6 +149,64 @@ python cuda_test/test_w_structure_baseline_smoke.py
 
 Smoke output is for API/output validation only. It intentionally uses very short relaxation and may mark some cases as not `production_ready` even though `acceptance_pass=true`.
 
+## ODS-W DFT Dataset Export
+
+Script: `run_scripts/build_odsw_dft_dataset.py`
+
+Purpose: prepare DFT-ready structure tasks for a first ODS-W MLP dataset. This workflow does not run DFT and does not depend on VASP/QE/CP2K being installed. It only exports structures, metadata, VASP-style input templates, and a readable dataset report.
+
+Recommended first chemistry:
+
+- Matrix: W
+- A element: Zr
+- B element: Y
+- Oxide/interface target: W-Zr-Y-O
+
+This is intentionally narrower than the full `Zr/Ti/Hf` and `Y/Er` space. Start with one verifiable chemistry, validate labels and MLP behavior, then expand.
+
+Pilot command:
+
+```bash
+python run_scripts/build_odsw_dft_dataset.py \
+  --replicas 8,8,8 \
+  --ods-a-element Zr \
+  --ods-b-element Y \
+  --oxide-formulas ABO3,A2B2O7 \
+  --particle-radii-A 5.0,7.0 \
+  --oxide-lattice-params-A 4.4,4.8 \
+  --interface-clearances-A 0.8,1.2 \
+  --output-dir run_output/odsw_dft_dataset_WZrYO
+```
+
+Output layout:
+
+- `manifest.json`
+  Dataset-level summary. It explicitly records `dft_runner_included=false` and `dft_software_required=true`.
+- `metadata.csv`
+  One row per DFT task, including formula, particle radius, interface clearance, atom count, composition, POSCAR path, and builder summary path.
+- `dataset_report.md`
+  Human-readable explanation of scope, chemistry, label requirements, and limitations.
+- `structures/<task_id>/`
+  Simulon builder outputs: `structure.xyz`, `summary.json`, `composition.csv`, `preview.png`, and ODS-W interface sanity files.
+- `vasp_inputs/<task_id>/`
+  `POSCAR`, `INCAR.template`, `KPOINTS.template`, `POTCAR.required.txt`, and `README.md`.
+
+Required labels for later MLP training:
+
+- Total energy
+- Atomic forces
+- Stress tensor
+- Final cell vectors
+- Species and positions
+
+Important limitation: the exported structures are geometry-only ODS-W precursors. They are not DFT-relaxed and are not MLP-ready labels until a DFT code has produced converged energy/force/stress data. Do not treat template INCAR/KPOINTS files as validated production DFT settings without checking pseudopotentials, cutoffs, k-point density, and convergence behavior.
+
+Smoke test:
+
+```bash
+python cuda_test/test_odsw_dft_dataset_smoke.py
+```
+
 ## Grain-Boundary Rigid-Body Translation Search
 
 Script: `run_scripts/w_gb_search.py`

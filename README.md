@@ -255,7 +255,41 @@ Smoke test:
 python cuda_test/test_w_structure_builder_smoke.py
 ```
 
-### 6a. Production pure-W structure baseline
+### 6a. ODS-W DFT dataset export
+
+`run_scripts/build_odsw_dft_dataset.py` prepares DFT-ready structure tasks for the first ODS-W MLP dataset. It does not run DFT and does not wrap any DFT package. The current recommended pilot chemistry is `W-Zr-Y-O`, because it is a verifiable first target before expanding to `Ti/Hf` or `Er`.
+
+Example pilot export:
+
+```bash
+python run_scripts/build_odsw_dft_dataset.py \
+  --replicas 8,8,8 \
+  --ods-a-element Zr \
+  --ods-b-element Y \
+  --oxide-formulas ABO3,A2B2O7 \
+  --particle-radii-A 5.0,7.0 \
+  --oxide-lattice-params-A 4.4,4.8 \
+  --interface-clearances-A 0.8,1.2 \
+  --output-dir run_output/odsw_dft_dataset_WZrYO
+```
+
+Outputs:
+
+- `manifest.json`: dataset-level machine-readable summary.
+- `metadata.csv`: one row per DFT task.
+- `dataset_report.md`: human-readable scope, chemistry, and DFT-label requirements.
+- `structures/<task_id>/`: Simulon builder outputs, preview, composition, interface sanity.
+- `vasp_inputs/<task_id>/`: `POSCAR`, `INCAR.template`, `KPOINTS.template`, `POTCAR.required.txt`, and task README.
+
+Required labels for later MLP training are total energy, forces, stress, final cell, species, and positions. The exported `INCAR.template` and `KPOINTS.template` are starting points only; record the exact pseudopotentials, cutoffs, k-points, and convergence settings used for real DFT labels.
+
+Smoke test:
+
+```bash
+python cuda_test/test_odsw_dft_dataset_smoke.py
+```
+
+### 6b. Production pure-W structure baseline
 
 Run the full pure-W structure baseline matrix before ODS-W embedding or defect-mechanics comparisons:
 
@@ -296,7 +330,7 @@ Smoke test:
 python cuda_test/test_w_structure_baseline_smoke.py
 ```
 
-### 6b. W CSL grain-boundary search
+### 6c. W CSL grain-boundary search
 
 For grain-boundary work, do not use the raw bicrystal seed as the final model. Run a rigid-body translation search, relax every candidate, and rank by excess GB energy:
 
