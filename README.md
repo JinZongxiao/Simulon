@@ -257,7 +257,7 @@ python cuda_test/test_w_structure_builder_smoke.py
 
 ### 6a. ODS-W DFT dataset export
 
-`run_scripts/build_odsw_dft_dataset.py` prepares DFT-ready structure tasks for the first ODS-W MLP dataset. It does not run DFT and does not wrap any DFT package. The current recommended pilot chemistry is `W-Zr-Y-O`, because it is a verifiable first target before expanding to `Ti/Hf` or `Er`.
+`run_scripts/build_odsw_dft_dataset.py` prepares DFT-ready structure tasks for the first ODS-W MLP dataset. It does not run DFT and does not wrap any DFT package. Simulon uses backend-neutral `dft_tasks/<task_id>/` directories; QE, VASP, or future CP2K support are backend writers under each task, not top-level workflow names. The current recommended pilot chemistry is `W-Zr-Y-O`, because it is a verifiable first target before expanding to `Ti/Hf` or `Er`.
 
 Example pilot export:
 
@@ -270,6 +270,7 @@ python run_scripts/build_odsw_dft_dataset.py \
   --particle-radii-A 5.0,7.0 \
   --oxide-lattice-params-A 4.4,4.8 \
   --interface-clearances-A 0.8,1.2 \
+  --dft-backends qe,vasp \
   --output-dir run_output/odsw_dft_dataset_WZrYO
 ```
 
@@ -279,9 +280,11 @@ Outputs:
 - `metadata.csv`: one row per DFT task.
 - `dataset_report.md`: human-readable scope, chemistry, and DFT-label requirements.
 - `structures/<task_id>/`: Simulon builder outputs, preview, composition, interface sanity.
-- `vasp_inputs/<task_id>/`: `POSCAR`, `INCAR.template`, `KPOINTS.template`, `POTCAR.required.txt`, and task README.
+- `dft_tasks/<task_id>/common/`: backend-independent `structure.xyz` and `builder_summary.json`.
+- `dft_tasks/<task_id>/qe/`: Quantum ESPRESSO `pw.in` template.
+- `dft_tasks/<task_id>/vasp/`: `POSCAR`, `INCAR.template`, `KPOINTS.template`, and `POTCAR.required.txt`.
 
-Required labels for later MLP training are total energy, forces, stress, final cell, species, and positions. The exported `INCAR.template` and `KPOINTS.template` are starting points only; record the exact pseudopotentials, cutoffs, k-points, and convergence settings used for real DFT labels.
+Required labels for later MLP training are total energy, forces, stress, final cell, species, and positions. The exported QE/VASP templates are starting points only; record the exact pseudopotentials, cutoffs, k-points, and convergence settings used for real DFT labels.
 
 Smoke test:
 

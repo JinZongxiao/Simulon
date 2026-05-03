@@ -153,7 +153,7 @@ Smoke output is for API/output validation only. It intentionally uses very short
 
 Script: `run_scripts/build_odsw_dft_dataset.py`
 
-Purpose: prepare DFT-ready structure tasks for a first ODS-W MLP dataset. This workflow does not run DFT and does not depend on VASP/QE/CP2K being installed. It only exports structures, metadata, VASP-style input templates, and a readable dataset report.
+Purpose: prepare DFT-ready structure tasks for a first ODS-W MLP dataset. This workflow does not run DFT and does not depend on VASP/QE/CP2K being installed. It exports structures, backend-neutral metadata, backend-specific input templates, and a readable dataset report.
 
 Recommended first chemistry:
 
@@ -175,21 +175,26 @@ python run_scripts/build_odsw_dft_dataset.py \
   --particle-radii-A 5.0,7.0 \
   --oxide-lattice-params-A 4.4,4.8 \
   --interface-clearances-A 0.8,1.2 \
+  --dft-backends qe,vasp \
   --output-dir run_output/odsw_dft_dataset_WZrYO
 ```
 
 Output layout:
 
 - `manifest.json`
-  Dataset-level summary. It explicitly records `dft_runner_included=false` and `dft_software_required=true`.
+  Dataset-level summary. It explicitly records `dft_runner_included=false`, `dft_software_required=true`, `dft_tasks_dir`, and `dft_backends`.
 - `metadata.csv`
-  One row per DFT task, including formula, particle radius, interface clearance, atom count, composition, POSCAR path, and builder summary path.
+  One row per DFT task, including formula, particle radius, interface clearance, atom count, composition, task directory, common structure path, and backend-specific input paths.
 - `dataset_report.md`
   Human-readable explanation of scope, chemistry, label requirements, and limitations.
 - `structures/<task_id>/`
   Simulon builder outputs: `structure.xyz`, `summary.json`, `composition.csv`, `preview.png`, and ODS-W interface sanity files.
-- `vasp_inputs/<task_id>/`
-  `POSCAR`, `INCAR.template`, `KPOINTS.template`, `POTCAR.required.txt`, and `README.md`.
+- `dft_tasks/<task_id>/common/`
+  Backend-independent `structure.xyz` and `builder_summary.json`.
+- `dft_tasks/<task_id>/qe/`
+  Quantum ESPRESSO `pw.in` template.
+- `dft_tasks/<task_id>/vasp/`
+  `POSCAR`, `INCAR.template`, `KPOINTS.template`, and `POTCAR.required.txt`.
 
 Required labels for later MLP training:
 
@@ -199,7 +204,7 @@ Required labels for later MLP training:
 - Final cell vectors
 - Species and positions
 
-Important limitation: the exported structures are geometry-only ODS-W precursors. They are not DFT-relaxed and are not MLP-ready labels until a DFT code has produced converged energy/force/stress data. Do not treat template INCAR/KPOINTS files as validated production DFT settings without checking pseudopotentials, cutoffs, k-point density, and convergence behavior.
+Important limitation: the exported structures are geometry-only ODS-W precursors. They are not DFT-relaxed and are not MLP-ready labels until a DFT code has produced converged energy/force/stress data. Do not treat template QE/VASP inputs as validated production DFT settings without checking pseudopotentials, cutoffs, k-point density, smearing, and convergence behavior.
 
 Smoke test:
 
