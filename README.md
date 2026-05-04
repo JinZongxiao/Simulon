@@ -325,6 +325,36 @@ source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
 python cuda_test/test_dft_qe_smoke.py
 ```
 
+Batch labeling from `metadata.csv`:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/run_dft_qe_batch.py \
+  run_output/odsw_dft_dataset_WZrYO \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200
+```
+
+The batch runner is conservative by default. It skips any task whose
+`dft_label.json` already has `label_ready=true`. Use `--rerun-completed` only
+when you intentionally want to overwrite completed labels. It writes
+`qe_batch_summary.csv` and `qe_batch_summary.json` under the dataset root.
+
+Useful batch options:
+
+- `--limit N`: run at most N non-skipped tasks.
+- `--dry-run`: write planned QE commands/status files without launching QE.
+- `--label-sources pure_w_bulk,ods_interface`: restrict by metadata label source.
+- `--diversity-roles interface_reference`: restrict by diversity role.
+- `--stop-on-error`: abort on the first failed task instead of continuing.
+
+Batch smoke test:
+
+```bash
+python cuda_test/test_dft_qe_batch_smoke.py
+```
+
 ### 6c. Production pure-W structure baseline
 
 Run the full pure-W structure baseline matrix before ODS-W embedding or defect-mechanics comparisons:

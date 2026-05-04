@@ -9,6 +9,10 @@
 - Added QE DFT label runner documentation for converting Quantum ESPRESSO
   outputs into `dft_label.json` with energy, forces, stress, cell, species, and
   label-readiness fields.
+- Added `run_scripts/run_dft_qe_batch.py` for conservative batch labeling from
+  `metadata.csv`; completed `label_ready=true` tasks are skipped by default and
+  batch results are written to `qe_batch_summary.csv/json`.
+- Added `cuda_test/test_dft_qe_batch_smoke.py` for dry-run batch validation.
 - Updated the Chinese README to match the English DFT/QE workflow guidance.
 
 ## 2026-04-26

@@ -282,6 +282,57 @@ python cuda_test/test_dft_qe_smoke.py
 
 The smoke test always checks the parser. If `pw.x`, `mpirun`, and the W UPF are available in the environment, it also runs a two-atom W BCC SCF and writes a real `dft_label.json`.
 
+## QE DFT Batch Runner
+
+Script: `run_scripts/run_dft_qe_batch.py`
+
+Purpose: run many QE tasks listed in an ODS-W dataset `metadata.csv`, while preserving completed labels by default.
+
+Example:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/run_dft_qe_batch.py \
+  run_output/odsw_dft_dataset_WZrYO \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200
+```
+
+Default behavior:
+
+- Reads `metadata.csv` from the dataset root.
+- Resolves `dft_task_dir` and `qe_input` for each task.
+- Skips tasks whose `dft_label.json` already has `label_ready=true`.
+- Runs remaining tasks through `run_scripts/run_dft_qe_task.py`.
+- Continues after failed tasks unless `--stop-on-error` is set.
+
+Outputs:
+
+- `qe_batch_summary.csv`
+  One row per selected task: state, return code, label readiness, energy, paths, and message.
+- `qe_batch_summary.json`
+  Machine-readable batch summary with selected count, attempted count, label-ready count, state counts, and per-task results.
+
+Useful options:
+
+- `--limit N`
+  Run at most N non-skipped tasks.
+- `--dry-run`
+  Write planned command/status files without launching QE.
+- `--rerun-completed`
+  Rerun tasks even if `dft_label.json` already reports `label_ready=true`.
+- `--label-sources pure_w_bulk,ods_interface`
+  Restrict tasks by metadata label source.
+- `--diversity-roles interface_reference`
+  Restrict tasks by diversity role.
+
+Smoke test:
+
+```bash
+python cuda_test/test_dft_qe_batch_smoke.py
+```
+
 ## Grain-Boundary Rigid-Body Translation Search
 
 Script: `run_scripts/w_gb_search.py`

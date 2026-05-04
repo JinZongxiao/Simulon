@@ -368,6 +368,36 @@ python cuda_test/test_dft_qe_smoke.py
 
 这个 smoke test 总会检查 parser。如果环境里能找到 `pw.x`、`mpirun` 和 W 的 UPF 赝势，它还会实际跑一个 2 原子 BCC W 的 QE SCF，并输出真实 `dft_label.json`。这个结果只用于验证链路，不用于生产物理结论。
 
+从 `metadata.csv` 批量跑标签：
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/run_dft_qe_batch.py \
+  run_output/odsw_dft_dataset_WZrYO \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200
+```
+
+batch runner 的默认策略是保守的：如果某个 task 的 `dft_label.json` 已经存在且 `label_ready=true`，它会自动跳过，不会重复覆盖。只有明确加 `--rerun-completed` 时才会重跑已完成任务。批量结果会写到 dataset 根目录下：
+
+- `qe_batch_summary.csv`
+- `qe_batch_summary.json`
+
+常用批量参数：
+
+- `--limit N`：最多运行 N 个未跳过任务，适合先试跑。
+- `--dry-run`：只写计划命令和 status，不真正启动 QE。
+- `--label-sources pure_w_bulk,ods_interface`：按 `metadata.csv` 里的标签来源筛选。
+- `--diversity-roles interface_reference`：按构型多样性角色筛选。
+- `--stop-on-error`：遇到第一个失败任务就停止；默认是记录失败并继续跑后面的任务。
+
+Batch smoke test：
+
+```bash
+python cuda_test/test_dft_qe_batch_smoke.py
+```
+
 ### 6c. 生产级 pure-W 结构基线
 
 在做 ODS-W 嵌入或缺陷力学对比前，先跑完整 pure-W 结构基线矩阵：
