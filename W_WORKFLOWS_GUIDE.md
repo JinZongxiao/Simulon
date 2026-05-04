@@ -236,11 +236,15 @@ Script: `run_scripts/run_dft_qe_task.py`
 
 Purpose: run one `dft_tasks/<task_id>/qe/pw.in` input through Quantum ESPRESSO and convert the output into the backend-neutral MLP label schema.
 
+Important: `load_dft_qe_env.sh` prepends the QE environment to `PATH`. Use it
+to expose `mpirun` and `pw.x`, but invoke Simulon with the explicit
+`torchG_env` Python because the QE Python does not include torch.
+
 Example:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/run_dft_qe_task.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/run_dft_qe_task.py \
   run_output/odsw_dft_dataset_WZrYO/dft_tasks/<task_id> \
   --np 8 \
   --omp 1 \
@@ -277,7 +281,7 @@ Smoke test:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python cuda_test/test_dft_qe_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_dft_qe_smoke.py
 ```
 
 The smoke test always checks the parser. If `pw.x`, `mpirun`, and the W UPF are available in the environment, it also runs a two-atom W BCC SCF and writes a real `dft_label.json`.
@@ -292,7 +296,7 @@ Example:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/run_dft_qe_batch.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/run_dft_qe_batch.py \
   run_output/odsw_dft_dataset_WZrYO \
   --np 8 \
   --omp 1 \
@@ -330,7 +334,7 @@ Useful options:
 Smoke test:
 
 ```bash
-python cuda_test/test_dft_qe_batch_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_dft_qe_batch_smoke.py
 ```
 
 ## W-Zr-Y-O QE Closed Loop
@@ -349,14 +353,14 @@ Purpose: provide the first complete ODS-W DFT-label loop for MLP development:
 Smoke test:
 
 ```bash
-python cuda_test/test_odsw_qe_closed_loop_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_odsw_qe_closed_loop_smoke.py
 ```
 
 Server dry-run:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --dry-run \
   --batch-limit 4 \
   --output-dir run_output/odsw_qe_closed_loop_WYZrO
@@ -366,7 +370,7 @@ Small real QE batch:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --batch-limit 4 \
   --np 8 \
   --omp 1 \
@@ -377,7 +381,7 @@ python run_scripts/odsw_qe_closed_loop.py \
 Audit only:
 
 ```bash
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --stage audit \
   --output-dir run_output/odsw_qe_closed_loop_WYZrO
 ```

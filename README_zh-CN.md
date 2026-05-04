@@ -334,9 +334,11 @@ python cuda_test/test_odsw_dft_dataset_smoke.py
 
 服务器上已安装 QE 环境时的示例：
 
+注意：`load_dft_qe_env.sh` 会把 QE 环境放到 `PATH` 最前面。这是为了找到 `mpirun` 和 `pw.x`，但 QE 环境里的 Python 没有 torch。因此运行 Simulon 脚本时必须显式使用下面这个 `torchG_env` Python，不能裸写 `python`。
+
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/run_dft_qe_task.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/run_dft_qe_task.py \
   run_output/odsw_dft_dataset_WZrYO/dft_tasks/<task_id> \
   --np 8 \
   --omp 1 \
@@ -363,7 +365,7 @@ Smoke test：
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python cuda_test/test_dft_qe_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_dft_qe_smoke.py
 ```
 
 这个 smoke test 总会检查 parser。如果环境里能找到 `pw.x`、`mpirun` 和 W 的 UPF 赝势，它还会实际跑一个 2 原子 BCC W 的 QE SCF，并输出真实 `dft_label.json`。这个结果只用于验证链路，不用于生产物理结论。
@@ -372,7 +374,7 @@ python cuda_test/test_dft_qe_smoke.py
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/run_dft_qe_batch.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/run_dft_qe_batch.py \
   run_output/odsw_dft_dataset_WZrYO \
   --np 8 \
   --omp 1 \
@@ -395,7 +397,7 @@ batch runner 的默认策略是保守的：如果某个 task 的 `dft_label.json
 Batch smoke test：
 
 ```bash
-python cuda_test/test_dft_qe_batch_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_dft_qe_batch_smoke.py
 ```
 
 ### 6c. W-Zr-Y-O QE 闭环
@@ -405,14 +407,14 @@ python cuda_test/test_dft_qe_batch_smoke.py
 Smoke test：
 
 ```bash
-python cuda_test/test_odsw_qe_closed_loop_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_odsw_qe_closed_loop_smoke.py
 ```
 
 服务器上先 dry-run 检查队列：
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --dry-run \
   --batch-limit 4 \
   --output-dir run_output/odsw_qe_closed_loop_WYZrO
@@ -422,7 +424,7 @@ python run_scripts/odsw_qe_closed_loop.py \
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --batch-limit 4 \
   --np 8 \
   --omp 1 \
@@ -433,7 +435,7 @@ python run_scripts/odsw_qe_closed_loop.py \
 后续如果只是补审计和报告，不重新跑 QE：
 
 ```bash
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --stage audit \
   --output-dir run_output/odsw_qe_closed_loop_WYZrO
 ```

@@ -301,9 +301,13 @@ python cuda_test/test_odsw_dft_dataset_smoke.py
 
 After generating `dft_tasks/<task_id>/qe/pw.in`, run one task through the QE backend:
 
+Important: `load_dft_qe_env.sh` puts the QE environment at the front of `PATH`.
+That is needed for `mpirun` and `pw.x`, but its Python does not include torch.
+Run Simulon with the explicit `torchG_env` Python shown below.
+
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/run_dft_qe_task.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/run_dft_qe_task.py \
   run_output/odsw_dft_dataset_WZrYO/dft_tasks/<task_id> \
   --np 8 \
   --omp 1 \
@@ -322,14 +326,14 @@ Smoke test:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python cuda_test/test_dft_qe_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_dft_qe_smoke.py
 ```
 
 Batch labeling from `metadata.csv`:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/run_dft_qe_batch.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/run_dft_qe_batch.py \
   run_output/odsw_dft_dataset_WZrYO \
   --np 8 \
   --omp 1 \
@@ -352,7 +356,7 @@ Useful batch options:
 Batch smoke test:
 
 ```bash
-python cuda_test/test_dft_qe_batch_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_dft_qe_batch_smoke.py
 ```
 
 ### 6c. W-Zr-Y-O QE closed loop
@@ -365,14 +369,14 @@ audit, and a readable closed-loop report. The chemistry is fixed to
 Smoke test:
 
 ```bash
-python cuda_test/test_odsw_qe_closed_loop_smoke.py
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python cuda_test/test_odsw_qe_closed_loop_smoke.py
 ```
 
 Dry-run the first queue on the server:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --dry-run \
   --batch-limit 4 \
   --output-dir run_output/odsw_qe_closed_loop_WYZrO
@@ -382,7 +386,7 @@ Run a small real QE batch:
 
 ```bash
 source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --batch-limit 4 \
   --np 8 \
   --omp 1 \
@@ -393,7 +397,7 @@ python run_scripts/odsw_qe_closed_loop.py \
 After additional labels finish, rebuild only the audit/report:
 
 ```bash
-python run_scripts/odsw_qe_closed_loop.py \
+/public/home/normal_bgd/anaconda3/envs/torchG_env/bin/python run_scripts/odsw_qe_closed_loop.py \
   --stage audit \
   --output-dir run_output/odsw_qe_closed_loop_WYZrO
 ```
