@@ -48,6 +48,7 @@ def _write_qe_input(path: Path) -> None:
 
 
 def main():
+    repo = Path(__file__).resolve().parents[1]
     root = Path(__file__).resolve().parents[1] / "run_output" / "smoke_dft_qe_batch"
     dataset = root / "dataset"
     tasks_dir = dataset / "dft_tasks"
@@ -64,15 +65,15 @@ def main():
             "task_id": "task_a",
             "label_source": "pure_w_bulk",
             "diversity_role": "equilibrium_reference",
-            "dft_task_dir": str(task_a),
-            "qe_input": str(task_a / "qe" / "pw.in"),
+            "dft_task_dir": str(task_a.relative_to(repo)),
+            "qe_input": str((task_a / "qe" / "pw.in").relative_to(repo)),
         },
         {
             "task_id": "task_b",
             "label_source": "ods_interface",
             "diversity_role": "interface_reference",
-            "dft_task_dir": str(task_b),
-            "qe_input": str(task_b / "qe" / "pw.in"),
+            "dft_task_dir": str(task_b.relative_to(repo)),
+            "qe_input": str((task_b / "qe" / "pw.in").relative_to(repo)),
         },
     ]
     with open(metadata, "w", encoding="utf-8", newline="") as f:

@@ -41,7 +41,13 @@ def _read_json(path: Path) -> dict | None:
 
 def _resolve_path(value: str, base: Path) -> Path:
     path = Path(value)
-    return path if path.is_absolute() else (base / path).resolve()
+    if path.is_absolute():
+        return path
+    base_candidate = (base / path).resolve()
+    cwd_candidate = (Path.cwd() / path).resolve()
+    if base_candidate.exists() or not cwd_candidate.exists():
+        return base_candidate
+    return cwd_candidate
 
 
 def _label_ready(path: Path) -> bool:
