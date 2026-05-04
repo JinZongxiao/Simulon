@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -175,6 +176,19 @@ def run_qe_batch(args: argparse.Namespace) -> dict:
                 if args.stop_on_error:
                     break
                 continue
+            if args.dry_run:
+                run_count += 1
+                cmd = [args.mpirun, "-np", str(args.np), args.pw, "-in", str(input_path)]
+                print(" ".join(shlex.quote(x) for x in cmd))
+                results.append(
+                    _status_row(
+                        task_id,
+                        "planned",
+                        "dry run only; task qe_status.json/qe.out were not modified",
+                        paths=paths,
+                    )
+                )
+                continue
 
             task_args = argparse.Namespace(
                 task_dir=str(task_dir),
@@ -187,7 +201,7 @@ def run_qe_batch(args: argparse.Namespace) -> dict:
                 np=int(args.np),
                 omp=int(args.omp),
                 timeout=int(args.timeout),
-                dry_run=bool(args.dry_run),
+                dry_run=False,
                 allow_failed_label=bool(args.allow_failed_label),
             )
             run_count += 1

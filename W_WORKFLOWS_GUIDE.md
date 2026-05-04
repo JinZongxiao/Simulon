@@ -323,7 +323,7 @@ Useful options:
 - `--limit N`
   Run at most N non-skipped tasks.
 - `--dry-run`
-  Write planned command/status files without launching QE.
+  Print planned QE commands and write only the batch summary. It does not modify per-task `qe_status.json` or `qe.out`.
 - `--rerun-completed`
   Rerun tasks even if `dft_label.json` already reports `label_ready=true`.
 - `--label-sources pure_w_bulk,ods_interface`

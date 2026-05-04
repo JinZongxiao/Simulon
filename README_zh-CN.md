@@ -389,7 +389,7 @@ batch runner 的默认策略是保守的：如果某个 task 的 `dft_label.json
 常用批量参数：
 
 - `--limit N`：最多运行 N 个未跳过任务，适合先试跑。
-- `--dry-run`：只写计划命令和 status，不真正启动 QE。
+- `--dry-run`：只打印计划命令并写 batch summary，不真正启动 QE，也不改每个 task 的 `qe_status.json` 或 `qe.out`。
 - `--label-sources pure_w_bulk,ods_interface`：按 `metadata.csv` 里的标签来源筛选。
 - `--diversity-roles interface_reference`：按构型多样性角色筛选。
 - `--stop-on-error`：遇到第一个失败任务就停止；默认是记录失败并继续跑后面的任务。

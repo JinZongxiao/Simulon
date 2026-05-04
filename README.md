@@ -348,7 +348,7 @@ when you intentionally want to overwrite completed labels. It writes
 Useful batch options:
 
 - `--limit N`: run at most N non-skipped tasks.
-- `--dry-run`: write planned QE commands/status files without launching QE.
+- `--dry-run`: print planned QE commands and write only the batch summary; it does not modify per-task `qe_status.json` or `qe.out`.
 - `--label-sources pure_w_bulk,ods_interface`: restrict by metadata label source.
 - `--diversity-roles interface_reference`: restrict by diversity role.
 - `--stop-on-error`: abort on the first failed task instead of continuing.

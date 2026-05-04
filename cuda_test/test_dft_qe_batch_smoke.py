@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -50,6 +51,8 @@ def _write_qe_input(path: Path) -> None:
 def main():
     repo = Path(__file__).resolve().parents[1]
     root = Path(__file__).resolve().parents[1] / "run_output" / "smoke_dft_qe_batch"
+    if root.exists():
+        shutil.rmtree(root)
     dataset = root / "dataset"
     tasks_dir = dataset / "dft_tasks"
     task_a = tasks_dir / "task_a"
@@ -90,9 +93,12 @@ def main():
     assert summary["state_counts"]["planned"] == 1
     assert Path(summary["summary_csv"]).exists()
     assert Path(summary["summary_json"]).exists()
-    status = json.loads((task_b / "qe" / "qe_status.json").read_text(encoding="utf-8"))
-    assert status["dry_run"] is True
-    assert status["np"] == 2
+    assert not (task_b / "qe" / "qe_status.json").exists()
+    assert not (task_b / "qe" / "qe.out").exists()
+    with open(summary["summary_csv"], "r", encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    planned = [row for row in rows if row["task_id"] == "task_b"][0]
+    assert planned["message"] == "dry run only; task qe_status.json/qe.out were not modified"
     print("DFT QE batch smoke test passed.")
 
 
