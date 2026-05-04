@@ -16,6 +16,9 @@
 - Added `run_scripts/odsw_qe_closed_loop.py` and
   `cuda_test/test_odsw_qe_closed_loop_smoke.py` for the first W-Zr-Y-O
   export -> QE batch -> label audit -> report loop.
+- Added task-level QE locks (`qe/.simulon_qe.lock`) so concurrent batch runners
+  skip already-owned tasks instead of launching duplicate `pw.x` jobs against
+  the same output files.
 - Updated the Chinese README to match the English DFT/QE workflow guidance.
 
 ## 2026-04-26

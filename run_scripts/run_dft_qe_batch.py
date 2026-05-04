@@ -5,9 +5,11 @@ import csv
 import json
 import os
 import shlex
+import socket
 import sys
 import time
 from pathlib import Path
+import shutil
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -79,6 +81,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--omp", type=int, default=1)
     p.add_argument("--timeout", type=int, default=3600)
     p.add_argument("--allow-failed-label", action="store_true")
+    p.add_argument("--lock-stale-seconds", type=int, default=0, help="treat task locks older than this as stale; 0 disables stale-lock removal")
     return p
 
 
@@ -102,6 +105,62 @@ def _task_paths(row: dict, metadata_base: Path) -> tuple[Path, Path, Path, Path,
     status_path = task_dir / "qe" / "qe_status.json"
     label_path = task_dir / "dft_label.json"
     return task_dir, input_path, output_path, status_path, label_path
+
+
+def _task_lock_path(task_dir: Path) -> Path:
+    return task_dir / "qe" / ".simulon_qe.lock"
+
+
+def _lock_message(lock_path: Path) -> str:
+    info_path = lock_path / "lock.json"
+    info = _read_json(info_path)
+    if not info:
+        return f"task lock exists: {lock_path}"
+    return (
+        "task locked by "
+        f"host={info.get('hostname', 'unknown')} "
+        f"pid={info.get('pid', 'unknown')} "
+        f"since={info.get('started_time', 'unknown')}"
+    )
+
+
+def _acquire_task_lock(task_dir: Path, stale_seconds: int = 0) -> tuple[bool, Path, str]:
+    lock_path = _task_lock_path(task_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_path.mkdir()
+    except FileExistsError:
+        if stale_seconds > 0:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+            except FileNotFoundError:
+                age = 0.0
+            if age > stale_seconds:
+                shutil.rmtree(lock_path, ignore_errors=True)
+                try:
+                    lock_path.mkdir()
+                except FileExistsError:
+                    return False, lock_path, _lock_message(lock_path)
+            else:
+                return False, lock_path, _lock_message(lock_path)
+        else:
+            return False, lock_path, _lock_message(lock_path)
+    info = {
+        "hostname": socket.gethostname(),
+        "pid": os.getpid(),
+        "started_time": time.strftime("%Y-%m-%d %H:%M:%S %z"),
+        "started_unix": time.time(),
+        "task_dir": str(task_dir),
+    }
+    _write_json(lock_path / "lock.json", info)
+    return True, lock_path, ""
+
+
+def _release_task_lock(lock_path: Path) -> None:
+    info = _read_json(lock_path / "lock.json")
+    if info and info.get("pid") != os.getpid():
+        return
+    shutil.rmtree(lock_path, ignore_errors=True)
 
 
 def _status_row(task_id: str, state: str, message: str = "", status: dict | None = None, paths: dict | None = None) -> dict:
@@ -190,6 +249,10 @@ def run_qe_batch(args: argparse.Namespace) -> dict:
                 )
                 continue
 
+            locked, lock_path, lock_message = _acquire_task_lock(task_dir, stale_seconds=int(args.lock_stale_seconds))
+            if not locked:
+                results.append(_status_row(task_id, "locked", lock_message, paths=paths))
+                continue
             task_args = argparse.Namespace(
                 task_dir=str(task_dir),
                 input=str(input_path),
@@ -205,7 +268,10 @@ def run_qe_batch(args: argparse.Namespace) -> dict:
                 allow_failed_label=bool(args.allow_failed_label),
             )
             run_count += 1
-            status = run_qe_task(task_args)
+            try:
+                status = run_qe_task(task_args)
+            finally:
+                _release_task_lock(lock_path)
             state = "planned" if args.dry_run else ("completed" if status.get("label_ready") else "failed")
             results.append(_status_row(task_id, state, status=status, paths=paths))
             if state == "failed" and args.stop_on_error:

@@ -344,6 +344,9 @@ The batch runner is conservative by default. It skips any task whose
 `dft_label.json` already has `label_ready=true`. Use `--rerun-completed` only
 when you intentionally want to overwrite completed labels. It writes
 `qe_batch_summary.csv` and `qe_batch_summary.json` under the dataset root.
+Each real task run also acquires `qe/.simulon_qe.lock` before launching QE, so
+two batch runners will not start the same task at the same time. A locked task
+is reported as `state=locked` and skipped by the later runner.
 
 Useful batch options:
 
@@ -352,6 +355,7 @@ Useful batch options:
 - `--label-sources pure_w_bulk,ods_interface`: restrict by metadata label source.
 - `--diversity-roles interface_reference`: restrict by diversity role.
 - `--stop-on-error`: abort on the first failed task instead of continuing.
+- `--lock-stale-seconds N`: optionally clear task locks older than N seconds; keep this at the default unless you have confirmed the old runner is dead.
 
 Batch smoke test:
 

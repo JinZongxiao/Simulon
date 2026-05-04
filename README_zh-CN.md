@@ -386,6 +386,8 @@ batch runner 的默认策略是保守的：如果某个 task 的 `dft_label.json
 - `qe_batch_summary.csv`
 - `qe_batch_summary.json`
 
+真实运行每个 task 前，batch runner 会先创建 `qe/.simulon_qe.lock`。如果另一个 runner 已经锁住同一个 task，后来的 runner 会把该 task 记为 `state=locked` 并跳过，避免两个 QE 同时写同一个 `qe.out`。
+
 常用批量参数：
 
 - `--limit N`：最多运行 N 个未跳过任务，适合先试跑。
@@ -393,6 +395,7 @@ batch runner 的默认策略是保守的：如果某个 task 的 `dft_label.json
 - `--label-sources pure_w_bulk,ods_interface`：按 `metadata.csv` 里的标签来源筛选。
 - `--diversity-roles interface_reference`：按构型多样性角色筛选。
 - `--stop-on-error`：遇到第一个失败任务就停止；默认是记录失败并继续跑后面的任务。
+- `--lock-stale-seconds N`：可选清理超过 N 秒的旧锁。只有确认旧 runner 已经死掉时再用，默认不要开。
 
 Batch smoke test：
 

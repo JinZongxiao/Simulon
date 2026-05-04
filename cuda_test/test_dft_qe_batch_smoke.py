@@ -99,6 +99,16 @@ def main():
         rows = list(csv.DictReader(f))
     planned = [row for row in rows if row["task_id"] == "task_b"][0]
     assert planned["message"] == "dry run only; task qe_status.json/qe.out were not modified"
+
+    lock_dir = task_b / "qe" / ".simulon_qe.lock"
+    lock_dir.mkdir()
+    (lock_dir / "lock.json").write_text(json.dumps({"hostname": "smoke", "pid": 123}), encoding="utf-8")
+    locked_args = parser.parse_args([str(dataset), "--task-ids", "task_b", "--limit", "1"])
+    locked_summary = run_qe_batch(locked_args)
+    assert locked_summary["state_counts"]["locked"] == 1
+    assert locked_summary["attempted_runs"] == 0
+    assert not (task_b / "qe" / "qe_status.json").exists()
+    assert not (task_b / "qe" / "qe.out").exists()
     print("DFT QE batch smoke test passed.")
 
 

@@ -309,6 +309,8 @@ Default behavior:
 - Resolves `dft_task_dir` and `qe_input` for each task.
 - Skips tasks whose `dft_label.json` already has `label_ready=true`.
 - Runs remaining tasks through `run_scripts/run_dft_qe_task.py`.
+- Acquires `qe/.simulon_qe.lock` before launching a real QE task.
+- Reports `state=locked` when another runner already owns the task.
 - Continues after failed tasks unless `--stop-on-error` is set.
 
 Outputs:
@@ -330,6 +332,8 @@ Useful options:
   Restrict tasks by metadata label source.
 - `--diversity-roles interface_reference`
   Restrict tasks by diversity role.
+- `--lock-stale-seconds N`
+  Optionally clear locks older than N seconds. Use only after confirming the old runner is dead.
 
 Smoke test:
 
