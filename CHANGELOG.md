@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-04
+
+### Added
+
+- Added backend-neutral ODS-W DFT dataset export documentation for QE/VASP task
+  templates, `metadata.csv`, `manifest.json`, and required MLP labels.
+- Added QE DFT label runner documentation for converting Quantum ESPRESSO
+  outputs into `dft_label.json` with energy, forces, stress, cell, species, and
+  label-readiness fields.
+- Updated the Chinese README to match the English DFT/QE workflow guidance.
+
 ## 2026-04-26
 
 ### Added

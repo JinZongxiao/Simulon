@@ -23,6 +23,8 @@
 | **W DBTT** | 新增 `run_scripts/w_dbtt_scan.py` 和 `postprocess/dbtt.py`：基于裂纹开口的温度扫描与 DBTT 趋势分析 |
 | **W 晶界** | 新增严格 CSL `[001]` bicrystal 构型、刚体平移搜索和晶界能报告 |
 | **W 结构基线** | 新增生产级 pure-W 结构基线矩阵：bulk、surface、defect、crack/notch seed 和 GB search |
+| **ODS-W DFT 数据集** | 新增 backend-neutral 的 ODS-W DFT task 导出，支持 QE/VASP 模板 |
+| **QE 标签入口** | 新增单个 Quantum ESPRESSO task runner，将能量、力、应力解析为统一 `dft_label.json` |
 | **性能** | RTX 3050 上 100 原子 Ar NVT 约 **384 步/s** |
 
 ---
@@ -36,6 +38,7 @@
 - **Verlet 邻居表**：基于位移阈值（skin/2）的惰性重建；可选 CUDA 扩展加速。
 - **模块化力场**：Lennard-Jones、EAM、Born–Mayer–Huggins，以及用户自定义对势模板。
 - **W 力学流程**：内置钨拉伸、纳米压痕和裂纹开口脚本，支持 `[100]/[110]/[111]` 取向结构生成、CSV/PNG 输出和 smoke test。
+- **ODS-W 数据集入口**：生成 backend-neutral DFT task 目录，为后续 ODS-W 机器学习势训练准备结构和标签接口。
 - **Restart**：完整断点续跑支持，每 N 步保存一次，重启无需重新平衡。
 - **RDF 分析器**：在线累积，同类/异类原子对均有正确归一化。
 - **I/O 与工具**：XYZ 读写、CSV 能量日志、轨迹输出、EAM 表格解析、pymatgen/ASE 集成。
@@ -87,6 +90,7 @@ postprocess/
   crack.py                # 应力-CMOD 摘要 + PNG 绘图
   dbtt.py                 # 温度扫描聚合 + PNG 绘图
   grain_boundary.py       # 晶界 excess energy 报告
+  dft_qe.py               # Quantum ESPRESSO 输出解析 + 统一 DFT 标签 JSON
 
 cuda source/
   neighbor_search_kernel.cu
@@ -106,6 +110,8 @@ run_scripts/
   build_w_structure.py    # 纯 W 结构生成器 CLI
   w_structure_baseline.py # 生产级 pure-W 结构基线矩阵
   w_gb_search.py          # CSL 晶界刚体平移搜索
+  build_odsw_dft_dataset.py # ODS-W DFT task 数据集导出
+  run_dft_qe_task.py      # 单个 QE task 运行 + dft_label.json 生成
   check_w_orientation.py  # 取向 BCC-W 结构静态检查
   plot_md_diagnostics.py
 
@@ -255,7 +261,114 @@ Smoke test：
 python cuda_test/test_w_structure_builder_smoke.py
 ```
 
-### 6a. 生产级 pure-W 结构基线
+### 6a. ODS-W DFT 数据集导出
+
+`run_scripts/build_odsw_dft_dataset.py` 用于为第一版 ODS-W 机器学习势数据集准备 DFT-ready 结构任务。它只负责生成结构、统一 metadata、后端输入模板和可读报告，不直接运行 DFT，也不把 Simulon 绑定到某一个 DFT 软件。
+
+Simulon 的设计是：
+
+- 顶层任务目录统一为 `dft_tasks/<task_id>/`
+- 通用结构和元数据放在 `common/`
+- QE、VASP 或未来 CP2K 只是每个 task 下面的 backend writer
+- 后续 MLP 训练读取统一标签 `dft_label.json`，而不是直接依赖某个 DFT 后端格式
+
+当前推荐的第一版可验证化学体系是 `W-Zr-Y-O`。先把 `YZrWO` 这类最小可控体系跑通，再扩展到 `Ti/Hf` 或 `Er`，这样更容易判断结构生成、DFT 标签和后续 MLP 误差来源。
+
+示例：导出一个 ODS-W pilot dataset。
+
+```bash
+python run_scripts/build_odsw_dft_dataset.py \
+  --campaign pilot_diverse \
+  --replicas 8,8,8 \
+  --ods-a-element Zr \
+  --ods-b-element Y \
+  --oxide-formulas ABO3,A2B2O7 \
+  --particle-radii-A 5.0,7.0 \
+  --oxide-lattice-params-A 4.4,4.8 \
+  --interface-clearances-A 0.8,1.2 \
+  --dft-backends qe,vasp \
+  --output-dir run_output/odsw_dft_dataset_WZrYO
+```
+
+参数选择：
+
+- `--campaign interface_grid`：只扫 ODS 界面几何，适合快速检查结构生成器。
+- `--campaign pilot_diverse`：推荐用于第一版 MLP 数据集，因为它会覆盖 pure-W bulk、弹性应变、rattle 热扰动近似、表面、点缺陷、稀释 Zr/Y 溶质和 ODS-W 界面。
+- `--ods-a-element`：ABO 氧化物中的 A 位元素，例如 `Zr/Ti/Hf`。
+- `--ods-b-element`：ABO 氧化物中的 B 位元素，例如 `Y/Er`。
+- `--oxide-formulas`：氧化物化学式族，例如 `ABO3,A2B2O7`。
+- `--particle-radii-A`：嵌入 W 基体的氧化物颗粒半径，单位 Å。
+- `--interface-clearances-A`：氧化物颗粒与 W 基体界面的最小清理距离，避免初始原子严重重叠。
+- `--dft-backends`：要写出的 DFT 后端输入模板，例如 `qe,vasp`。
+
+主要输出：
+
+- `manifest.json`：整个 dataset 的机器可读摘要。
+- `metadata.csv`：每个 DFT task 一行，包含化学式、颗粒半径、界面距离、原子数、组成、task 目录和后端输入路径。
+- `dataset_report.md`：给人读的数据集范围、化学空间和 DFT 标签要求说明。
+- `structures/<task_id>/`：Simulon builder 原始输出、预览图、composition 和 interface sanity check。
+- `dft_tasks/<task_id>/common/`：后端无关的 `structure.xyz` 和 `builder_summary.json`。
+- `dft_tasks/<task_id>/qe/`：Quantum ESPRESSO `pw.in` 模板。
+- `dft_tasks/<task_id>/vasp/`：`POSCAR`、`INCAR.template`、`KPOINTS.template` 和 `POTCAR.required.txt`。
+
+后续训练 MLP 需要的 DFT 标签不是只有能量，还必须包括：
+
+- 总能量 `energy_eV`
+- 每个原子的力 `forces_eV_A`
+- 应力张量 `stress_GPa`
+- 最终晶胞 `cell_A`
+- 元素种类 `species`
+- 原子坐标 `positions_A`
+
+注意：这里导出的 QE/VASP 输入只是起始模板，不等价于生产级 DFT 设置。正式计算必须记录赝势、截断能、k 点密度、展宽方式和收敛阈值，并做基本收敛性检查。
+
+Smoke test：
+
+```bash
+python cuda_test/test_odsw_dft_dataset_smoke.py
+```
+
+### 6b. QE DFT 标签 runner
+
+生成 `dft_tasks/<task_id>/qe/pw.in` 后，可以用 `run_scripts/run_dft_qe_task.py` 跑单个 QE task，并把 QE 输出转换为统一的 `dft_label.json`。
+
+服务器上已安装 QE 环境时的示例：
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/run_dft_qe_task.py \
+  run_output/odsw_dft_dataset_WZrYO/dft_tasks/<task_id> \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200
+```
+
+主要输出：
+
+- `dft_tasks/<task_id>/qe/qe.out`：QE 原始输出。
+- `dft_tasks/<task_id>/qe/qe_status.json`：运行状态、返回码、耗时和标签是否可用。
+- `dft_tasks/<task_id>/dft_label.json`：后端无关的 MLP 标签文件。
+
+`dft_label.json` 的关键字段：
+
+- `backend`：当前为 `qe`。
+- `energy_eV`：总 DFT 能量，单位 eV。
+- `forces_eV_A`：每个原子的力，单位 eV/Å。
+- `stress_GPa`：应力张量，单位 GPa，由 QE 的 kbar 输出转换得到。
+- `cell_A`、`species`、`positions_A`：DFT 输入结构。
+- `converged`、`job_done`：QE 是否完成且 SCF 收敛。
+- `label_ready`：只有能量、力、应力都存在，且没有 NaN/Inf 时才为 true。
+
+Smoke test：
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python cuda_test/test_dft_qe_smoke.py
+```
+
+这个 smoke test 总会检查 parser。如果环境里能找到 `pw.x`、`mpirun` 和 W 的 UPF 赝势，它还会实际跑一个 2 原子 BCC W 的 QE SCF，并输出真实 `dft_label.json`。这个结果只用于验证链路，不用于生产物理结论。
+
+### 6c. 生产级 pure-W 结构基线
 
 在做 ODS-W 嵌入或缺陷力学对比前，先跑完整 pure-W 结构基线矩阵：
 
@@ -296,7 +409,7 @@ Smoke test：
 python cuda_test/test_w_structure_baseline_smoke.py
 ```
 
-### 6b. W CSL 晶界搜索
+### 6d. W CSL 晶界搜索
 
 晶界模拟不要直接把原始 bicrystal seed 当成最终模型。先做刚体平移搜索，对每个候选结构弛豫，再按 excess GB energy 排序：
 
