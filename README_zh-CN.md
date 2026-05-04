@@ -398,7 +398,59 @@ Batch smoke test：
 python cuda_test/test_dft_qe_batch_smoke.py
 ```
 
-### 6c. 生产级 pure-W 结构基线
+### 6c. W-Zr-Y-O QE 闭环
+
+`run_scripts/odsw_qe_closed_loop.py` 是 ODS-W MLP 数据集的第一条端到端闭环入口。它把结构导出、QE 批量运行、标签审计和可读报告串起来。化学体系固定为 `W-Zr-Y-O`；你说的 `W-Y-Zr-O` 在这里按同一个四元素体系处理，只是元素顺序写法不同。
+
+Smoke test：
+
+```bash
+python cuda_test/test_odsw_qe_closed_loop_smoke.py
+```
+
+服务器上先 dry-run 检查队列：
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/odsw_qe_closed_loop.py \
+  --dry-run \
+  --batch-limit 4 \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+确认路径和 QE 命令没问题后，先跑一个小批量真实 QE：
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/odsw_qe_closed_loop.py \
+  --batch-limit 4 \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200 \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+后续如果只是补审计和报告，不重新跑 QE：
+
+```bash
+python run_scripts/odsw_qe_closed_loop.py \
+  --stage audit \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+闭环输出：
+
+- `metadata.csv`
+- `manifest.json`
+- `qe_batch_summary.csv`
+- `qe_batch_summary.json`
+- `dft_label_audit.csv`
+- `closed_loop_summary.json`
+- `closed_loop_report.md`
+
+`closed_loop_pass=true` 要求两件事同时成立：构型覆盖达标，并且所有 task 都有可用的 `dft_label.json`。dry-run 或只跑了一部分 QE 时，正常应该是 `closed_loop_pass=false`；这代表队列还没跑完，不代表结构生成器失败。
+
+### 6d. 生产级 pure-W 结构基线
 
 在做 ODS-W 嵌入或缺陷力学对比前，先跑完整 pure-W 结构基线矩阵：
 

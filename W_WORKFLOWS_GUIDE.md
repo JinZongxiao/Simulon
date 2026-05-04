@@ -333,6 +333,74 @@ Smoke test:
 python cuda_test/test_dft_qe_batch_smoke.py
 ```
 
+## W-Zr-Y-O QE Closed Loop
+
+Script: `run_scripts/odsw_qe_closed_loop.py`
+
+Purpose: provide the first complete ODS-W DFT-label loop for MLP development:
+
+- export a W-Zr-Y-O pilot dataset,
+- run or dry-run the QE batch,
+- audit `dft_label.json` readiness,
+- write a human-readable closed-loop report.
+
+`W-Y-Zr-O` and `W-Zr-Y-O` are treated as the same four-element target in this workflow. The builder uses `Zr` as the A-site element and `Y` as the B-site element.
+
+Smoke test:
+
+```bash
+python cuda_test/test_odsw_qe_closed_loop_smoke.py
+```
+
+Server dry-run:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/odsw_qe_closed_loop.py \
+  --dry-run \
+  --batch-limit 4 \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+Small real QE batch:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/odsw_qe_closed_loop.py \
+  --batch-limit 4 \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200 \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+Audit only:
+
+```bash
+python run_scripts/odsw_qe_closed_loop.py \
+  --stage audit \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+Outputs:
+
+- `metadata.csv`
+- `manifest.json`
+- `qe_batch_summary.csv`
+- `qe_batch_summary.json`
+- `dft_label_audit.csv`
+- `closed_loop_summary.json`
+- `closed_loop_report.md`
+
+Readiness semantics:
+
+- `coverage_pass=true`
+  The queue contains the minimum W bulk/defect/surface/solute/interface classes for a first ODS-W loop.
+- `all_labels_ready=true`
+  Every task has a usable `dft_label.json` with energy, forces, stress, convergence flags, and no NaN/Inf.
+- `closed_loop_pass=true`
+  Both coverage and label readiness are satisfied.
+
 ## Grain-Boundary Rigid-Body Translation Search
 
 Script: `run_scripts/w_gb_search.py`

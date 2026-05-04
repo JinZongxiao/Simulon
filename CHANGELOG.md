@@ -13,6 +13,9 @@
   `metadata.csv`; completed `label_ready=true` tasks are skipped by default and
   batch results are written to `qe_batch_summary.csv/json`.
 - Added `cuda_test/test_dft_qe_batch_smoke.py` for dry-run batch validation.
+- Added `run_scripts/odsw_qe_closed_loop.py` and
+  `cuda_test/test_odsw_qe_closed_loop_smoke.py` for the first W-Zr-Y-O
+  export -> QE batch -> label audit -> report loop.
 - Updated the Chinese README to match the English DFT/QE workflow guidance.
 
 ## 2026-04-26

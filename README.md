@@ -355,7 +355,64 @@ Batch smoke test:
 python cuda_test/test_dft_qe_batch_smoke.py
 ```
 
-### 6c. Production pure-W structure baseline
+### 6c. W-Zr-Y-O QE closed loop
+
+`run_scripts/odsw_qe_closed_loop.py` is the recommended first end-to-end path
+for the ODS-W MLP dataset. It combines dataset export, QE batch execution, label
+audit, and a readable closed-loop report. The chemistry is fixed to
+`W-Zr-Y-O` (`W-Y-Zr-O` naming is treated as the same four-element target).
+
+Smoke test:
+
+```bash
+python cuda_test/test_odsw_qe_closed_loop_smoke.py
+```
+
+Dry-run the first queue on the server:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/odsw_qe_closed_loop.py \
+  --dry-run \
+  --batch-limit 4 \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+Run a small real QE batch:
+
+```bash
+source /public/home/normal_bgd/J1N/software/load_dft_qe_env.sh
+python run_scripts/odsw_qe_closed_loop.py \
+  --batch-limit 4 \
+  --np 8 \
+  --omp 1 \
+  --timeout 7200 \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+After additional labels finish, rebuild only the audit/report:
+
+```bash
+python run_scripts/odsw_qe_closed_loop.py \
+  --stage audit \
+  --output-dir run_output/odsw_qe_closed_loop_WYZrO
+```
+
+Closed-loop outputs:
+
+- `metadata.csv`
+- `manifest.json`
+- `qe_batch_summary.csv`
+- `qe_batch_summary.json`
+- `dft_label_audit.csv`
+- `closed_loop_summary.json`
+- `closed_loop_report.md`
+
+`closed_loop_pass=true` requires both coverage and every task having a usable
+`dft_label.json`. A dry-run or partially labeled queue should normally report
+`closed_loop_pass=false`; that is a queue state, not a failure of the builder.
+
+### 6d. Production pure-W structure baseline
 
 Run the full pure-W structure baseline matrix before ODS-W embedding or defect-mechanics comparisons:
 
